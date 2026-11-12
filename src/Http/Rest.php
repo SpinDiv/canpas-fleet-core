@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Canpas\Fleet\Http;
 
+use Canpas\Fleet\Domain\Agreements;
 use Canpas\Fleet\Domain\Catalog;
 use Canpas\Fleet\Domain\Companies;
+use Canpas\Fleet\Domain\Documents;
 use Canpas\Fleet\Domain\Orders;
+use Canpas\Fleet\Domain\Payments;
+use Canpas\Fleet\Domain\Requirements;
 use Canpas\Fleet\Domain\Settings;
 use Canpas\Fleet\Domain\Stock;
 use Canpas\Fleet\Portal\Nav;
@@ -114,6 +118,67 @@ final class Rest
         self::post('/stock', static function (Actor $a, \WP_REST_Request $r): array {
             Stock::adjust($a, (string) $r->get_param('item_id'), (int) $r->get_param('qty'), (string) $r->get_param('reason'), (string) $r->get_param('note'));
             return ['message' => 'Stock updated.'];
+        });
+
+        // Requirements: documents, deposit, agreement, and the steps to confirmation.
+        self::post('/documents', static function (Actor $a, \WP_REST_Request $r): array {
+            $in = self::body($r);
+            $id = Documents::upload($a, $in, $r->get_file_params());
+            $order = strtolower((string) ($in['order_id'] ?? ''));
+            if ($order !== '') {
+                Requirements::attach($a, $order, (string) $in['doc_type'], $id);
+                return ['id' => $id, 'message' => 'Uploaded and added to the order.'];
+            }
+            return ['id' => $id, 'message' => 'Uploaded. Canpas will check it.'];
+        });
+        self::post('/documents/' . self::ID . '/accept', static function (Actor $a, \WP_REST_Request $r): array {
+            Documents::accept($a, (string) $r['id']);
+            return ['message' => 'Marked as checked.'];
+        });
+        self::post('/documents/' . self::ID . '/reject', static function (Actor $a, \WP_REST_Request $r): array {
+            Documents::reject($a, (string) $r['id'], (string) $r->get_param('reason'));
+            return ['message' => 'Rejected. The customer sees your reason.'];
+        });
+        self::post('/orders/' . self::ID . '/attach', static function (Actor $a, \WP_REST_Request $r): array {
+            Requirements::attach($a, (string) $r['id'], (string) $r->get_param('doc_type'), strtolower((string) $r->get_param('document_id')));
+            return ['message' => 'Added to the order.'];
+        });
+        self::post('/orders/' . self::ID . '/payments', static function (Actor $a, \WP_REST_Request $r): array {
+            $files = $r->get_file_params();
+            Payments::submit($a, (string) $r['id'], self::body($r), $files['proof'] ?? null);
+            return ['message' => 'Proof of payment sent. Canpas will check it against their account.'];
+        });
+        self::post('/payments/' . self::ID . '/receive', static function (Actor $a, \WP_REST_Request $r): array {
+            Payments::receive($a, (string) $r['id']);
+            return ['message' => 'Payment marked as received.'];
+        });
+        self::post('/payments/' . self::ID . '/reject', static function (Actor $a, \WP_REST_Request $r): array {
+            Payments::reject($a, (string) $r['id'], (string) $r->get_param('reason'));
+            return ['message' => 'Payment rejected. The customer sees your reason.'];
+        });
+        self::post('/orders/' . self::ID . '/sign', static function (Actor $a, \WP_REST_Request $r): array {
+            Agreements::sign($a, (string) $r['id'], self::body($r));
+            return ['message' => 'Agreement signed. A copy is saved on the order.', 'redirect' => add_query_arg('id', (string) $r['id'], Router::url('my-orders'))];
+        });
+        self::post('/orders/' . self::ID . '/submit', static function (Actor $a, \WP_REST_Request $r): array {
+            Requirements::submit($a, (string) $r['id']);
+            return ['message' => 'Sent to Canpas. You will get an email once they have checked it.'];
+        });
+        self::post('/orders/' . self::ID . '/send-back', static function (Actor $a, \WP_REST_Request $r): array {
+            Requirements::sendBack($a, (string) $r['id'], (string) $r->get_param('reason'));
+            return ['message' => 'Sent back to the customer.'];
+        });
+        self::post('/orders/' . self::ID . '/confirm', static function (Actor $a, \WP_REST_Request $r): array {
+            Requirements::confirm($a, (string) $r['id']);
+            return ['message' => 'Order confirmed. The customer has been emailed.'];
+        });
+        self::post('/orders/' . self::ID . '/decline', static function (Actor $a, \WP_REST_Request $r): array {
+            Requirements::decline($a, (string) $r['id'], (string) $r->get_param('reason'));
+            return ['message' => 'Order declined. The customer has been emailed.'];
+        });
+        self::post('/agreement', static function (Actor $a, \WP_REST_Request $r): array {
+            $v = Agreements::saveVersion($a, (string) $r->get_param('title'), (string) $r->get_param('body'));
+            return ['message' => "Saved as version {$v}. New signatures use it; signed orders keep theirs."];
         });
 
         // Settings.

@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace Canpas\Fleet\Cli;
 
 use Canpas\Fleet\Audit\Audit;
+use Canpas\Fleet\Domain\Agreements;
 use Canpas\Fleet\Domain\Catalog;
 use Canpas\Fleet\Domain\Companies;
 use Canpas\Fleet\Domain\Distance;
+use Canpas\Fleet\Domain\Documents;
 use Canpas\Fleet\Domain\Orders;
+use Canpas\Fleet\Domain\Payments;
 use Canpas\Fleet\Domain\Pricing;
+use Canpas\Fleet\Domain\Requirements;
 use Canpas\Fleet\Domain\Settings;
 use Canpas\Fleet\Domain\Stock;
 use Canpas\Fleet\Portal\Nav;
@@ -110,6 +114,7 @@ final class SelfTest
             $admin = $mk('admin', Roles::ADMIN, null);
             self::milestone1($sfx, $admin, $dispatcher, $mk, $users, $companies);
             self::milestone2($sfx, $admin, $dispatcher, $custA, $userB, $suspended);
+            self::milestone3($sfx, $admin, $dispatcher, $custA, $userB);
         } catch (\Throwable $e) {
             self::check('Self-test ran to completion', false, get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
         } finally {
@@ -336,6 +341,165 @@ final class SelfTest
         }
     }
 
+    /** Milestone 3: documents, deposit, agreement and the confirm gate. */
+    private static function milestone3(string $sfx, Actor $admin, Actor $dispatcher, Actor $custA, Actor $userB): void
+    {
+        $savedSettings = get_option(Settings::OPTION, null);
+        Orders::$refPrefix = 'TST';
+        add_filter('pre_wp_mail', '__return_true');
+        $png = wp_tempnam('cftest3.png');
+        file_put_contents($png, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));
+        $file = static fn(): array => ['name' => 'id.png', 'tmp_name' => $png, 'size' => filesize($png), 'error' => UPLOAD_ERR_OK];
+        $both = static fn(): array => ['front' => $file(), 'back' => $file()];
+        $day = static fn(int $n): string => Db::todayManila()->modify("+{$n} days")->format('Y-m-d');
+        try {
+            $applied = Db::value(Db::prepare('SELECT status FROM ' . Db::t('migrations') . ' WHERE version = %s', '0004_requirements'));
+            self::check('Migration 0004_requirements is applied', $applied === 'applied', (string) $applied);
+            Settings::save($admin, ['yard_lat' => '14.329400', 'yard_lng' => '120.936700', 'hold_hours' => 24, 'driver_km_basis' => 'round_trip', 'notify_email' => '']);
+
+            $rates = ['starting_fee' => 3000, 'rate_per_km' => 50, 'driver_flat_fee' => 1500, 'driver_flat_km' => 10, 'driver_rate_per_km' => 30, 'daily_rate' => 0, 'free_km' => 0];
+            $typeId = Catalog::saveTruckType($admin, ['name' => "Selftest M3 truck {$sfx}", 'deposit_mode' => 'percent', 'deposit_value' => 30, 'active' => 1] + $rates);
+            Catalog::saveTruck($admin, ['type_id' => $typeId, 'plate' => "TC{$sfx}", 'odometer_km' => 0, 'status' => 'available']);
+            $base = ['truck_type_id' => $typeId, 'days' => 3, 'site_address' => 'Imus, Cavite', 'site_coords' => '14.4296, 120.9367'];
+            $self = Orders::bookTruck($custA, ['start_date' => $day(40), 'needs_driver' => '0'] + $base);
+            $driven = Orders::bookTruck($custA, ['start_date' => $day(50), 'needs_driver' => '1'] + $base);
+            $orderB = Orders::bookTruck($userB, ['start_date' => $day(60), 'needs_driver' => '1'] + $base);
+            $o = Orders::row($self);
+            self::check('A self-drive truck needs a licence; a truck with a Canpas driver does not',
+                (int) $o['license_required'] === 1 && (int) Orders::row($driven)['license_required'] === 0);
+
+            // Documents.
+            $gov = ['doc_type' => 'gov_id', 'person_name' => 'Juan Dela Cruz', 'id_number' => 'P1234567A'];
+            $licIn = static fn(string $exp): array => ['doc_type' => 'license', 'person_name' => 'Pedro Santos', 'id_number' => 'N01-23-456789', 'expiry_date' => $exp];
+            self::expect('An ID without a photo of the front is refused', 'file_missing', static fn() => Documents::upload($custA, $gov, []));
+            self::expect('A licence without its back is refused', 'file_missing', static fn() => Documents::upload($custA, $licIn($day(800)), ['front' => $file()]));
+            self::expect('An expired licence is refused', 'document_expired', static fn() => Documents::upload($custA, $licIn($day(-1)), $both()));
+            self::expect('Staff cannot upload customer documents', 'forbidden', static fn() => Documents::upload($dispatcher, $gov, ['front' => $file()]));
+            $idDoc = Documents::upload($custA, $gov, ['front' => $file()]);
+            $shortLic = Documents::upload($custA, $licIn($day(41)), $both());
+            $lic = Documents::upload($custA, $licIn($day(800)), $both());
+            $d = Documents::get($custA, $idDoc);
+            self::check('Uploaded documents wait for a Canpas check and are stored outside the web root',
+                $d['status'] === 'pending' && is_file(trailingslashit(CANPAS_FLEET_PRIVATE_DIR) . $d['front_file']) && !str_starts_with(realpath(CANPAS_FLEET_PRIVATE_DIR) ?: '', realpath(ABSPATH) ?: '//'));
+            self::expect('A licence that expires before the rental ends cannot be used', 'license_expires', static fn() => Requirements::attach($custA, $self, 'license', $shortLic));
+            self::expect("Another company cannot use this company's ID", 'not_found', static fn() => Requirements::attach($userB, $orderB, 'gov_id', $idDoc));
+            self::expect("Another company cannot open this company's ID file", 'not_found', static fn() => Documents::file($userB, $idDoc, 'front'));
+            Documents::file($dispatcher, $idDoc, 'front');
+            $views = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('file_views') . ' WHERE object_id = UNHEX(%s) AND user_id = %d', $idDoc, $dispatcher->userId));
+            self::check('Staff can open an ID file and the view is logged', $views === 1, "{$views} views");
+            Requirements::attach($custA, $self, 'gov_id', $idDoc);
+            Requirements::attach($custA, $self, 'license', $lic);
+            Requirements::attach($custA, $driven, 'gov_id', $idDoc);
+            self::check('One uploaded ID is reused on another order', Orders::row($driven)['gov_id_doc'] === $idDoc);
+
+            // Deposit and agreement still missing.
+            self::expect('An order cannot be sent to Canpas with the deposit and agreement missing', 'requirements_missing', static fn() => Requirements::submit($custA, $self));
+            $deposit = (float) $o['deposit_amount'];
+            $pay = static fn(float $amt, ?array $proof) => Payments::submit($custA, $self, ['amount' => (string) $amt, 'method' => 'bank', 'reference' => 'BDO-' . $sfx], $proof);
+            self::expect('A payment of zero is refused', 'invalid_input', static fn() => $pay(0, $file()));
+            self::expect('A payment without proof is refused', 'file_missing', static fn() => $pay(100, null));
+            $p1 = $pay($deposit - 100, $file());
+
+            $ink = self::signaturePng(true);
+            self::expect('Signing without ticking the agreement box is refused', 'not_agreed',
+                static fn() => Agreements::sign($custA, $self, ['signed_name' => 'Selftest Cust A', 'signature' => $ink, 'agree' => '0']));
+            self::expect('A blank signature is refused', 'signature_missing',
+                static fn() => Agreements::sign($custA, $self, ['signed_name' => 'Selftest Cust A', 'signature' => self::signaturePng(false), 'agree' => '1']));
+            self::expect('Staff cannot sign for the customer', 'forbidden',
+                static fn() => Agreements::sign($dispatcher, $self, ['signed_name' => 'X Y Z', 'signature' => $ink, 'agree' => '1']));
+            $active = Agreements::active();
+            Agreements::sign($custA, $self, ['signed_name' => 'Selftest Cust A', 'signature' => $ink, 'agree' => '1']);
+            $o = Orders::row($self);
+            $pdf = (string) @file_get_contents(trailingslashit(CANPAS_FLEET_PRIVATE_DIR) . $o['agreement_file']);
+            self::check('Signing saves a PDF with the signature, its version and a SHA-256 that matches the file',
+                str_starts_with($pdf, '%PDF-1.4') && str_contains($pdf, '/DCTDecode') && Agreements::intact($o) && $o['agreement_version_id'] === $active['id'] && $o['signed_name'] === 'Selftest Cust A',
+                strlen($pdf) . ' bytes');
+            self::expect('A dispatcher cannot change the agreement text', 'forbidden', static fn() => Agreements::saveVersion($dispatcher, 'X', Agreements::DEFAULT_BODY));
+            $newV = Agreements::saveVersion($admin, "Selftest agreement {$sfx}", Agreements::DEFAULT_BODY . "\n\nSelftest clause.");
+            self::check('New agreement text becomes the next version; a signed order keeps the version it signed',
+                $newV === (int) $active['version'] + 1 && Orders::row($self)['agreement_version_id'] === $active['id'] && (int) Agreements::active()['version'] === $newV);
+
+            // Deposit must be covered.
+            self::expect('Proof covering less than the deposit is not enough to send the order', 'requirements_missing', static fn() => Requirements::submit($custA, $self));
+            $p2 = $pay(100, $file());
+            Requirements::submit($custA, $self);
+            self::check('With ID, licence, deposit proof and signature in, the customer sends the order', Orders::row($self)['status'] === 'submitted');
+            self::expect('A sent order cannot be changed by the customer', 'wrong_status', static fn() => Requirements::attach($custA, $self, 'gov_id', $idDoc));
+
+            // Canpas checks.
+            self::expect('A customer cannot confirm an order', 'forbidden', static fn() => Requirements::confirm($custA, $self));
+            self::expect('Canpas cannot confirm while documents and deposit are unchecked', 'requirements_incomplete', static fn() => Requirements::confirm($dispatcher, $self));
+            self::expect('Rejecting a document needs a reason', 'reason_required', static fn() => Documents::reject($dispatcher, $idDoc, ''));
+            self::expect('Sending an order back needs a note', 'reason_required', static fn() => Requirements::sendBack($dispatcher, $self, ''));
+            Documents::reject($dispatcher, $idDoc, 'Photo is blurred');
+            Requirements::sendBack($dispatcher, $self, 'Please upload a clearer photo of your ID');
+            $o = Orders::row($self);
+            self::check('Canpas sends the order back with a note', $o['status'] === 'needs_fix' && $o['fix_note'] === 'Please upload a clearer photo of your ID');
+            self::expect('A rejected document cannot be attached again', 'document_rejected', static fn() => Requirements::attach($custA, $self, 'gov_id', $idDoc));
+            self::expect('The customer cannot send it again until the rejected ID is replaced', 'requirements_missing', static fn() => Requirements::submit($custA, $self));
+            $id2 = Documents::upload($custA, $gov, ['front' => $file(), 'back' => $file()]);
+            Requirements::attach($custA, $self, 'gov_id', $id2);
+            Requirements::submit($custA, $self);
+
+            self::expect('A customer cannot mark a payment received', 'forbidden', static fn() => Payments::receive($custA, $p1));
+            Payments::receive($dispatcher, $p1);
+            Documents::accept($dispatcher, $id2);
+            Documents::accept($dispatcher, $lic);
+            self::check('Received payments short of the deposit still block confirmation', Requirements::gaps(Orders::row($self)) === ['deposit'],
+                implode(',', Requirements::gaps(Orders::row($self))));
+            self::expect('Canpas cannot confirm before the whole deposit is received', 'requirements_incomplete', static fn() => Requirements::confirm($dispatcher, $self));
+            Payments::receive($dispatcher, $p2);
+            self::expect('A payment cannot be marked twice', 'wrong_status', static fn() => Payments::receive($dispatcher, $p2));
+            Requirements::confirm($dispatcher, $self);
+            $o = Orders::row($self);
+            $logged = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('audit_log') . ' WHERE object_id = UNHEX(%s) AND action = %s', $self, 'order.confirm'));
+            self::check('With everything checked, Canpas confirms the order (and it is in the audit log)',
+                $o['status'] === 'confirmed' && (int) $o['confirmed_by'] === $dispatcher->userId && $logged === 1);
+            self::expect('A confirmed order cannot be declined', 'wrong_status', static fn() => Requirements::decline($dispatcher, $self, 'Changed our mind'));
+
+            // Declining and holds.
+            self::expect('Declining needs a reason', 'reason_required', static fn() => Requirements::decline($dispatcher, $driven, ''));
+            Requirements::decline($dispatcher, $driven, 'Site cannot be reached by this truck');
+            self::check('Canpas declines an order with a reason', Orders::row($driven)['status'] === 'declined');
+            Db::exec(Db::prepare('UPDATE ' . Db::t('orders') . ' SET hold_expires_at = %s WHERE id = UNHEX(%s)', '2000-01-01 00:00:00.000000', $orderB));
+            self::expect('An order whose hold has ended cannot be sent', 'hold_expired', static fn() => Requirements::submit($userB, $orderB));
+
+            // Retention.
+            Db::exec(Db::prepare('UPDATE ' . Db::t('documents') . ' SET delete_after = %s WHERE id IN (UNHEX(%s), UNHEX(%s))', '2000-01-01', $shortLic, $lic));
+            $shortFile = trailingslashit(CANPAS_FLEET_PRIVATE_DIR) . Documents::row($shortLic)['front_file'];
+            Documents::purge();
+            $gone = Documents::row($shortLic);
+            $kept = Documents::row($lic);
+            self::check('After the retention period an unused document\'s files are deleted; one on an open order is kept',
+                $gone['status'] === 'deleted' && !is_file($shortFile) && $gone['front_file'] === null && strlen((string) $gone['id_number']) === 4 && $kept['status'] === 'ok' && $kept['front_file'] !== null);
+        } finally {
+            @unlink($png);
+            remove_filter('pre_wp_mail', '__return_true');
+            Orders::$refPrefix = 'ORD';
+            $savedSettings === null ? delete_option(Settings::OPTION) : update_option(Settings::OPTION, $savedSettings, false);
+        }
+    }
+
+    /** A 300×100 PNG data URL, with a scribble or blank. */
+    private static function signaturePng(bool $ink): string
+    {
+        $im = imagecreatetruecolor(300, 100);
+        imagesavealpha($im, true);
+        imagealphablending($im, false);
+        imagefill($im, 0, 0, imagecolorallocatealpha($im, 255, 255, 255, 127));
+        if ($ink) {
+            imagealphablending($im, true);
+            imagesetthickness($im, 4);
+            $black = imagecolorallocate($im, 20, 29, 48);
+            imageline($im, 20, 70, 280, 30, $black);
+            imageline($im, 20, 30, 150, 85, $black);
+        }
+        ob_start();
+        imagepng($im);
+        imagedestroy($im);
+        return 'data:image/png;base64,' . base64_encode((string) ob_get_clean());
+    }
+
     private static function expect(string $name, string $reason, callable $fn): void
     {
         try {
@@ -364,13 +528,38 @@ final class SelfTest
     /** @param list<string> $companies @param list<int> $users */
     private static function teardown(array $companies, array $users, string $sfx): void
     {
+        $private = trailingslashit(CANPAS_FLEET_PRIVATE_DIR);
         foreach ($users as $uid) {
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('audit_log') . ' WHERE actor_user_id = %d', $uid));
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('memberships') . ' WHERE user_id = %d', $uid));
+            Db::exec(Db::prepare('DELETE FROM ' . Db::t('file_views') . ' WHERE user_id = %d', $uid));
         }
         foreach ($companies as $c) {
+            foreach (Db::rows(Db::prepare('SELECT proof_file FROM ' . Db::t('payments') . ' WHERE company_id = UNHEX(%s)', $c)) as $r) {
+                Files::delete($r['proof_file']);
+            }
+            Db::exec(Db::prepare('DELETE FROM ' . Db::t('payments') . ' WHERE company_id = UNHEX(%s)', $c));
+            foreach (Db::rows(Db::prepare('SELECT agreement_file FROM ' . Db::t('orders') . ' WHERE company_id = UNHEX(%s) AND agreement_file IS NOT NULL', $c)) as $r) {
+                Files::delete($r['agreement_file']);
+            }
             Db::exec(Db::prepare('DELETE l FROM ' . Db::t('order_lines') . ' l JOIN ' . Db::t('orders') . ' o ON o.id = l.order_id WHERE o.company_id = UNHEX(%s)', $c));
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('orders') . ' WHERE company_id = UNHEX(%s)', $c));
+            foreach (Db::rows(Db::prepare('SELECT front_file, back_file FROM ' . Db::t('documents') . ' WHERE company_id = UNHEX(%s)', $c)) as $r) {
+                Files::delete($r['front_file']);
+                Files::delete($r['back_file']);
+            }
+            Db::exec(Db::prepare('DELETE v FROM ' . Db::t('file_views') . ' v JOIN ' . Db::t('documents') . ' d ON d.id = v.object_id WHERE d.company_id = UNHEX(%s)', $c));
+            Db::exec(Db::prepare('DELETE FROM ' . Db::t('documents') . ' WHERE company_id = UNHEX(%s)', $c));
+            foreach (['documents', 'payments', 'agreements'] as $dir) {
+                @rmdir($private . $dir . '/' . $c);
+            }
+        }
+        if ($users !== []) {
+            $in = implode(',', array_map('intval', $users));
+            Db::exec('DELETE FROM ' . Db::t('agreement_versions') . ' WHERE created_by IN (' . $in . ')');
+            if ((int) Db::value('SELECT COUNT(*) FROM ' . Db::t('agreement_versions') . ' WHERE active = 1') === 0) {
+                Db::exec('UPDATE ' . Db::t('agreement_versions') . ' SET active = 1 ORDER BY version DESC LIMIT 1');
+            }
         }
         foreach ($companies as $c) {
             Files::delete((string) Db::value(Db::prepare('SELECT permit_file FROM ' . Db::t('companies') . ' WHERE id = UNHEX(%s)', $c)));

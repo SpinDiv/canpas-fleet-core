@@ -64,7 +64,8 @@ final class Orders
             'qty' => 1, 'charged_days' => $days, 'unit_price' => $p['total'], 'amount' => $p['total'], 'deposit' => $deposit,
             'rates' => self::truckRates($type), 'breakdown' => $p,
         ];
-        return self::draft('truck', $start, $end, $days, 'delivery', $driver, $address, $lat, $lng, $dist, [$line], $in);
+        // A self-drive truck needs the customer's driver's licence.
+        return ['license_required' => !$driver] + self::draft('truck', $start, $end, $days, 'delivery', $driver, $address, $lat, $lng, $dist, [$line], $in);
     }
 
     /** @param array<string, mixed> $in @return array<string, mixed> */
@@ -77,12 +78,14 @@ final class Orders
             throw new DomainError('invalid_input', 'Enter a quantity for at least one item.', ['field' => 'qty']);
         }
         $lines = [];
+        $heavy = false;
         foreach ($qty as $itemId => $n) {
             $item = Db::row(Db::prepare('SELECT *, ' . Db::hex('id') . ' FROM ' . Db::t('equipment_items') . ' WHERE id = UNHEX(%s) AND active = 1', $itemId));
             if ($item === null) {
                 throw new DomainError('invalid_input', 'One of the items is no longer offered. Refresh the page.', ['field' => 'qty']);
             }
             $e = Pricing::equipment($item, $n, $days);
+            $heavy = $heavy || $item['category'] === 'heavy';
             $lines[] = [
                 'line_type' => 'item', 'truck_type_id' => null, 'item_id' => $item['id'],
                 'description' => $item['name'], 'qty' => $n, 'charged_days' => $e['charged_days'],
@@ -109,7 +112,8 @@ final class Orders
                 'rates' => self::truckRates($type), 'breakdown' => $trip,
             ];
         }
-        return self::draft('equipment', $start, $end, $days, $fulfilment, false, $address, $lat, $lng, $dist, $lines, $in);
+        // Heavy equipment needs the operator's licence.
+        return ['license_required' => $heavy] + self::draft('equipment', $start, $end, $days, $fulfilment, false, $address, $lat, $lng, $dist, $lines, $in);
     }
 
     // ----- Booking -----------------------------------------------------------------------------
@@ -158,7 +162,7 @@ final class Orders
                 'id' => $id, 'ref' => $ref, 'company_id' => $companyId, 'created_by' => $actor->userId,
                 'kind' => $d['kind'], 'status' => 'requested',
                 'start_date' => $d['start'], 'end_date' => $d['end'], 'days' => $d['days'],
-                'fulfilment' => $d['fulfilment'], 'needs_driver' => $d['needs_driver'] ? 1 : 0,
+                'fulfilment' => $d['fulfilment'], 'needs_driver' => $d['needs_driver'] ? 1 : 0, 'license_required' => $d['license_required'] ? 1 : 0,
                 'site_address' => $d['site_address'], 'site_lat' => $d['site_lat'], 'site_lng' => $d['site_lng'],
                 'distance_km' => $d['distance_km'], 'distance_source' => $d['distance_source'],
                 'subtotal' => $d['subtotal'], 'deposit_amount' => $d['deposit'], 'total' => $d['total'],
@@ -181,7 +185,7 @@ final class Orders
 
     // ----- Status changes ----------------------------------------------------------------------
 
-    /** Customers may cancel their own held order; staff may cancel any held order with a reason. */
+    /** Customers may cancel their own order before it is sent to Canpas; staff may cancel with a reason. */
     public static function cancel(Actor $actor, string $orderId, string $reason = ''): void
     {
         $o = self::row($orderId);
@@ -190,8 +194,8 @@ final class Orders
             $actor->require('cf_book');
             self::assertCustomerAccess($actor, $o);
         }
-        if ($o['status'] !== 'requested') {
-            throw new DomainError('wrong_status', 'Only held orders can be cancelled here. Contact Canpas for confirmed orders.');
+        if (!in_array($o['status'], ['requested', 'needs_fix'], true)) {
+            throw new DomainError('wrong_status', 'Only orders not yet sent to Canpas can be cancelled here. Contact Canpas.');
         }
         $reason = sanitize_text_field(wp_unslash($reason));
         if ($staff && mb_strlen($reason) < 5) {
@@ -199,8 +203,8 @@ final class Orders
         }
         Db::transaction(static function () use ($actor, $o, $reason): void {
             Db::exec(Db::prepare(
-                'UPDATE ' . Db::t('orders') . ' SET status = %s, status_reason = %s, status_changed_by = %d, status_changed_at = %s, updated_at = %s WHERE id = UNHEX(%s) AND status = %s',
-                'cancelled', $reason !== '' ? mb_substr($reason, 0, 255) : 'Cancelled by customer', $actor->userId, Db::now(), Db::now(), $o['id'], 'requested'
+                'UPDATE ' . Db::t('orders') . ' SET status = %s, status_reason = %s, status_changed_by = %d, status_changed_at = %s, updated_at = %s WHERE id = UNHEX(%s) AND status IN (%s, %s)',
+                'cancelled', $reason !== '' ? mb_substr($reason, 0, 255) : 'Cancelled by customer', $actor->userId, Db::now(), Db::now(), $o['id'], 'requested', 'needs_fix'
             ));
             Audit::log($o['company_id'], $actor->userId, 'order.cancel', 'order', $o['id'], ['by' => $actor->isStaff() ? 'staff' : 'customer']);
         });
@@ -435,11 +439,12 @@ final class Orders
         ];
     }
 
-    /** @return array<string,mixed> */
-    private static function row(string $orderId): array
+    /** @return array<string,mixed> order row, ids as hex. No permission check: callers check access. */
+    public static function row(string $orderId): array
     {
         $orderId = Uuid::assertHex($orderId, 'order');
-        $o = Db::row(Db::prepare('SELECT *, ' . Db::hex('id') . ', ' . Db::hex('company_id') . ' FROM ' . Db::t('orders') . ' WHERE id = UNHEX(%s)', $orderId));
+        $o = Db::row(Db::prepare('SELECT *, ' . Db::hex('id') . ', ' . Db::hex('company_id') . ', ' . Db::hex('gov_id_doc') . ', ' . Db::hex('license_doc') . ', ' . Db::hex('agreement_version_id')
+            . ' FROM ' . Db::t('orders') . ' WHERE id = UNHEX(%s)', $orderId));
         if ($o === null) {
             throw new DomainError('not_found', 'Order not found.');
         }
@@ -447,7 +452,7 @@ final class Orders
     }
 
     /** Customers see their company's orders (company admin) or the ones they placed (company user). */
-    private static function assertCustomerAccess(Actor $actor, array $o): void
+    public static function assertCustomerAccess(Actor $actor, array $o): void
     {
         $sameCompany = $actor->companyId !== null && $actor->companyId === $o['company_id'];
         $mine = (int) $o['created_by'] === $actor->userId;

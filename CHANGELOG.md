@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 — 2026-11-13
+
+Milestone 3: requirements.
+
+- Documents: customers upload a government ID and, when needed, a driver's or operator's licence (front and back) into private storage. Each is reused on later orders until it expires. A licence must be valid until the rental ends. Opening any private file is permission-checked and logged (who, when, which side).
+- A licence is required for self-drive trucks and for orders with heavy equipment.
+- Deposit: customers send proof of a bank or GCash payment; Canpas marks it received or rejects it with a reason. Only received payments count towards the deposit.
+- Rental agreement: versioned text with merge tags, edited on the new Rental agreement page (admin). Customers read it, type their name, draw their signature and tick to agree. A PDF with the signature, Philippine time, IP reference and version is saved privately, with its SHA-256 on the order. A starting draft with bracketed parts for Canpas's lawyer is included.
+- Steps: the customer sends the order once all four are in; Canpas sends it back with a note, declines it with a reason, or confirms it. Confirming needs the ID and licence checked, the deposit received in full and the agreement signed. Customers and Canpas are emailed at each step.
+- Retention: ID and licence files are deleted after the retention period (hourly job) unless an open order still uses them; the record stays with the last four digits.
+- Screens: requirements checklist on every order, signing page with a signature pad, My documents (customers); Documents, Deposits & payments and Rental agreement (staff); dashboard alerts for orders, documents and payments to check.
+- Migration `0004_requirements`. Self-test grows to cover the confirm gate, licence expiry, private files and view log, reuse, deposit amount, signing and PDF, send back, decline and retention.
+
 ## 0.3.0 — 2026-11-13
 
 Milestone 2: ordering.

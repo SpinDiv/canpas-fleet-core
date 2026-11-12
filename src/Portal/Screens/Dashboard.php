@@ -22,12 +22,13 @@ final class Dashboard
         $trucks = Catalog::trucks();
         $truckTotal = count(array_filter($trucks, static fn($t) => $t['status'] !== 'retired'));
         $truckAvail = count(array_filter($trucks, static fn($t) => $t['status'] === 'available'));
+        $orderCounts = \Canpas\Fleet\Domain\Orders::counts();
 
         $kpis = '<div class="grid k4">'
             . Ui::kpi('Waiting for approval', (string) $companies['pending'], $companies['pending'] > 0 ? 'Company sign-ups to review' : 'Nothing to review', $companies['pending'] > 0 ? 'warn' : '')
             . Ui::kpi('Active customers', (string) $companies['approved'], $companies['suspended'] > 0 ? $companies['suspended'] . ' suspended' : 'Approved companies', $companies['suspended'] > 0 ? 'bad' : '')
             . Ui::kpi('Trucks available', $truckAvail . ' of ' . $truckTotal, $fleet['repair'] > 0 ? $fleet['repair'] . ($fleet['repair'] === 1 ? ' truck or unit' : ' trucks or units') . ' in repair' : 'None in repair', $fleet['repair'] > 0 ? 'warn' : '')
-            . Ui::kpi('Orders on hold', (string) (\Canpas\Fleet\Domain\Orders::counts()['requested'] ?? 0), 'Waiting for customer requirements')
+            . Ui::kpi('Waiting for your check', (string) ($orderCounts['submitted'] ?? 0), ($orderCounts['requested'] ?? 0) . ' on hold with customers', ($orderCounts['submitted'] ?? 0) > 0 ? 'warn' : '')
             . '</div>';
 
         // Needs attention: pending sign-ups and documents expiring within 30 days.
@@ -36,6 +37,19 @@ final class Dashboard
             foreach (Companies::list($actor, 'pending') as $c) {
                 $alerts[] = ['warn', 'Company waiting for approval: ' . $c['name'], 'Requested ' . Ui::when($c['created_at']), Router::url($actor->can('cf_approve_companies') ? 'approvals' : 'companies')];
             }
+        }
+        if ($actor->can('cf_manage_orders')) {
+            foreach (\Canpas\Fleet\Domain\Orders::list($actor, 'submitted', 20) as $o) {
+                $alerts[] = ['warn', 'Order ready for checking: ' . $o['ref'], $o['company_name'] . ' · starts ' . Ui::date($o['start_date']), add_query_arg('id', $o['id'], Router::url('orders'))];
+            }
+        }
+        $docs = \Canpas\Fleet\Domain\Documents::counts()['pending'];
+        if ($docs > 0 && $actor->can('cf_view_documents')) {
+            $alerts[] = ['', $docs . ' document' . ($docs === 1 ? '' : 's') . ' to check', 'IDs and licences uploaded by customers', Router::url('documents')];
+        }
+        $pays = \Canpas\Fleet\Domain\Payments::counts()['pending'];
+        if ($pays > 0 && $actor->can('cf_confirm_payments')) {
+            $alerts[] = ['', $pays . ' payment' . ($pays === 1 ? '' : 's') . ' to check', 'Proofs of payment waiting for the bank check', Router::url('payments')];
         }
         $soon = Db::todayManila()->modify('+30 days')->format('Y-m-d');
         foreach ($trucks as $t) {
@@ -70,7 +84,7 @@ final class Dashboard
             . Ui::card('Needs attention', $alertHtml)
             . Ui::card('Fleet status', Ui::table(['Plate', 'Type', 'Status'], $fleetRows, 'No trucks added yet.'), '<a href="' . esc_url(Router::url('trucks')) . '" class="small">View all</a>')
             . '</div>'
-            . '<p class="muted small" style="margin-top:16px">Deliveries, returns, orders waiting for a check, utilisation and revenue join this dashboard as ordering (milestone 2) and operations (milestone 4) go live.</p>';
+            . '<p class="muted small" style="margin-top:16px">Deliveries, returns, utilisation and revenue join this dashboard as operations (milestone 4) and billing (milestone 5) go live.</p>';
 
         $first = explode(' ', trim(wp_get_current_user()->display_name))[0] ?? '';
         $actions = $actor->can('cf_manage_fleet') ? '<a class="btn" href="' . esc_url(Router::url('trucks')) . '">Trucks</a>' : '';

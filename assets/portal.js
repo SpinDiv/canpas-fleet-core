@@ -88,6 +88,11 @@
     var form = ev.target;
     if (!form.matches('form[data-endpoint]')) return;
     ev.preventDefault();
+    // Signature pads: copy the drawing into their hidden field (empty if nothing was drawn).
+    form.querySelectorAll('canvas[data-signature]').forEach(function (c) {
+      var input = form.querySelector('input[name="' + c.dataset.signature + '"]');
+      if (input) input.value = c.dataset.drawn === '1' ? c.toDataURL('image/png') : '';
+    });
     var btn = ev.submitter && ev.submitter.matches('[type=submit]') ? ev.submitter : form.querySelector('[type=submit]');
     clearErrors(form);
     if (btn) { btn.disabled = true; btn.dataset.label = btn.textContent; btn.textContent = 'Saving…'; }
@@ -162,6 +167,51 @@
     t.textContent = show ? 'Hide' : 'Show';
     t.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
   });
+
+  // Signature pad: draw with finger, stylus or mouse. The canvas keeps its own resolution;
+  // pointer positions are scaled from the displayed size.
+  function setupPad(c) {
+    var ctx = c.getContext('2d');
+    var drawing = false;
+    var last = null;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#141D30';
+    ctx.lineWidth = 4;
+    function pos(ev) {
+      var r = c.getBoundingClientRect();
+      return { x: (ev.clientX - r.left) * (c.width / r.width), y: (ev.clientY - r.top) * (c.height / r.height) };
+    }
+    c.addEventListener('pointerdown', function (ev) {
+      ev.preventDefault();
+      c.setPointerCapture(ev.pointerId);
+      drawing = true;
+      last = pos(ev);
+      ctx.beginPath();
+      ctx.arc(last.x, last.y, 2, 0, Math.PI * 2);
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.fill();
+    });
+    c.addEventListener('pointermove', function (ev) {
+      if (!drawing) return;
+      var p = pos(ev);
+      ctx.beginPath();
+      ctx.moveTo(last.x, last.y);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      last = p;
+      c.dataset.drawn = '1';
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (t) {
+      c.addEventListener(t, function () { drawing = false; });
+    });
+    var clear = c.parentNode.querySelector('[data-sig-clear]');
+    if (clear) clear.addEventListener('click', function () {
+      ctx.clearRect(0, 0, c.width, c.height);
+      c.dataset.drawn = '';
+    });
+  }
+  document.querySelectorAll('canvas[data-signature]').forEach(setupPad);
 
   try {
     var msg = sessionStorage.getItem('cf-toast');

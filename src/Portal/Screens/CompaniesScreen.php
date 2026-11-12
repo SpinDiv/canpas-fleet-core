@@ -138,7 +138,7 @@ final class CompaniesScreen
         $first = Ui::e(explode(' ', trim(wp_get_current_user()->display_name))[0] ?? '');
         $kpis = '<div class="grid k4">'
             . Ui::kpi('Company', $c['name'], 'Account ' . strtolower(Ui::label($c['status'])))
-            . Ui::kpi('Orders on hold', (string) count(array_filter(\Canpas\Fleet\Domain\Orders::list($actor), static fn($o) => $o['status'] === 'requested')), 'Waiting for requirements')
+            . Ui::kpi('Needs your action', (string) count(array_filter(\Canpas\Fleet\Domain\Orders::list($actor), static fn($o) => in_array($o['status'], ['requested', 'needs_fix'], true))), 'Orders waiting for requirements')
             . Ui::kpi('People who can book', (string) $people)
             . '</div>';
         $next = Ui::card('Coming next', '<ul class="list">'

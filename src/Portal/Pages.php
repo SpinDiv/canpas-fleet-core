@@ -28,7 +28,8 @@ final class Pages
         'payments' => 'Deposits and payments with proof of payment, to confirm or reject.',
         'statements' => 'Monthly statements for long rentals and deposit settlement at return.',
         'reports' => 'Revenue by customer and item, kilometres, utilisation and overdue returns, with CSV export.',
-        'settings' => 'Yard address, hold time, km tolerance, payment instructions, agreement template and emails.',
+        'settings' => 'Yard address, hold time, km tolerance, payment instructions and emails.',
+        'agreement' => 'The rental agreement text customers sign, with version history.',
         'loadings' => 'Count items onto each truck before it leaves; shortfalls split the order line.',
         'returns' => 'Count items back in: good, damaged and missing, with photos.',
         'today' => 'Today\'s trips with map buttons, step by step: leaving yard, arrived, delivered, back at yard.',
@@ -57,6 +58,10 @@ final class Pages
         'book-truck' => [Screens\OrdersScreen::class, 'bookTruck'],
         'rent' => [Screens\OrdersScreen::class, 'rent'],
         'my-orders' => [Screens\OrdersScreen::class, 'myOrders'],
+        'my-documents' => [Screens\RequirementsScreen::class, 'myDocuments'],
+        'documents' => [Screens\RequirementsScreen::class, 'documents'],
+        'payments' => [Screens\RequirementsScreen::class, 'payments'],
+        'agreement' => [Screens\RequirementsScreen::class, 'agreement'],
     ];
 
     public static function render(Actor $actor, string $slug): void
@@ -72,17 +77,32 @@ final class Pages
         Layout::page($actor, $slug, $label, $body, $group);
     }
 
-    /** Private file download (business permit for now), after a permission check that is logged. */
+    /**
+     * Private file download: business permit (?company=), ID or licence (?doc=&side=),
+     * proof of payment (?payment=) or signed agreement (?agreement=<order id>).
+     * Every one goes through a domain permission check that also logs the view.
+     */
     public static function file(Actor $actor): void
     {
-        $company = strtolower(sanitize_key((string) ($_GET['company'] ?? '')));
+        $param = static fn(string $k): string => strtolower(sanitize_key((string) ($_GET[$k] ?? '')));
         try {
-            $f = \Canpas\Fleet\Domain\Companies::permitFile($actor, $company);
+            $f = match (true) {
+                $param('doc') !== '' => \Canpas\Fleet\Domain\Documents::file($actor, $param('doc'), $param('side')),
+                $param('payment') !== '' => \Canpas\Fleet\Domain\Payments::proof($actor, $param('payment')),
+                $param('agreement') !== '' => \Canpas\Fleet\Domain\Agreements::file($actor, $param('agreement')),
+                default => \Canpas\Fleet\Domain\Companies::permitFile($actor, $param('company')),
+            };
         } catch (\Canpas\Fleet\Support\DomainError $e) {
-            Layout::message('Document not available', $e->getMessage(), 403);
+            Layout::message('Document not available', $e->getMessage(), $e->reason === 'not_found' ? 404 : 403);
             return;
         }
         \Canpas\Fleet\Support\Files::stream($f['path'], $f['name']);
+    }
+
+    /** Link to a private file through the portal. @param array<string,string> $args */
+    public static function fileUrl(array $args): string
+    {
+        return add_query_arg($args, Router::url('file'));
     }
 
     private static function planned(string $slug, string $milestone): string

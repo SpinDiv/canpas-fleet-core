@@ -134,8 +134,9 @@ final class OrdersScreen
         $status = isset(Orders::STATUS_LABELS[$status]) ? $status : '';
         $counts = Orders::counts();
         $tabs = ['' => 'All (' . array_sum($counts) . ')'];
-        foreach (['requested', 'submitted', 'confirmed', 'expired', 'cancelled'] as $s) {
-            $tabs[$s] = Orders::STATUS_LABELS[$s] . ' (' . ($counts[$s] ?? 0) . ')';
+        foreach (['submitted', 'requested', 'needs_fix', 'confirmed', 'declined', 'expired', 'cancelled'] as $s) {
+            $label = ['requested' => 'On hold with customer', 'needs_fix' => 'Sent back to customer'][$s] ?? Orders::STATUS_LABELS[$s];
+            $tabs[$s] = $label . ' (' . ($counts[$s] ?? 0) . ')';
         }
         $rows = [];
         foreach (Orders::list($actor, $status) as $o) {
@@ -152,11 +153,16 @@ final class OrdersScreen
             Layout::message('Order not found', $e->getMessage(), 404, ['label' => 'Back to orders', 'href' => Router::url($page)]);
             return;
         }
+        if ($page === 'my-orders' && !empty($_GET['sign'])) {
+            RequirementsScreen::signPage($actor, $o);
+            return;
+        }
         $site = $o['fulfilment'] === 'pickup'
             ? 'Customer picks up at the Canpas yard'
             : Ui::e((string) $o['site_address']) . ($o['distance_km'] !== null ? '<br><span class="muted small">' . Ui::e(number_format((float) $o['distance_km'], 1)) . ' km round trip' . ($o['distance_source'] === 'estimate' ? ' (estimate)' : '') . '</span>' : '');
         $dl = '<dl class="dl">'
             . '<dt>Status</dt><dd>' . self::statusPill($o['status']) . ($o['status_reason'] ? ' <span class="muted small">' . Ui::e($o['status_reason']) . '</span>' : '') . '</dd>'
+            . ($o['status'] === 'confirmed' ? '<dt>Confirmed</dt><dd>' . Ui::e(Ui::when($o['confirmed_at'])) . '</dd>' : '')
             . ($o['hold_active'] ? '<dt>Held until</dt><dd><b>' . Ui::e(Ui::when($o['hold_expires_at'])) . '</b></dd>' : '')
             . '<dt>Company</dt><dd>' . Ui::e($o['company_name']) . '</dd>'
             . '<dt>Placed by</dt><dd>' . Ui::e($o['created_by_name']) . ' · ' . Ui::e(Ui::when($o['created_at'])) . '</dd>'
@@ -175,19 +181,21 @@ final class OrdersScreen
             'distance_km' => $o['distance_km'] !== null ? (float) $o['distance_km'] : null, 'distance_source' => $o['distance_source'], 'kind' => $o['kind']];
 
         $actions = '';
-        if ($o['status'] === 'requested') {
-            $actions = $actor->can('cf_manage_orders')
-                ? Ui::action('Cancel order', "orders/{$o['id']}/cancel", 'danger', '', 'Why is this order cancelled? The customer sees this reason.')
-                : Ui::action('Cancel order', "orders/{$o['id']}/cancel", 'danger', "Cancel order {$o['ref']}? The trucks and items are released.");
+        $staff = $actor->can('cf_manage_orders');
+        if ($staff) {
+            if ($o['status'] === 'submitted') {
+                $actions .= Ui::action('Send back', "orders/{$o['id']}/send-back", '', '', 'What should the customer fix? They see this note.')
+                    . Ui::action('Confirm order', "orders/{$o['id']}/confirm", 'primary', "Confirm order {$o['ref']}? The customer is emailed.");
+            }
+            if (in_array($o['status'], ['requested', 'submitted', 'needs_fix'], true)) {
+                $actions = Ui::action('Decline', "orders/{$o['id']}/decline", 'danger', '', 'Why is this order declined? The customer sees this reason.') . $actions;
+            }
+        } elseif (in_array($o['status'], ['requested', 'needs_fix'], true)) {
+            $actions = Ui::action('Cancel order', "orders/{$o['id']}/cancel", 'danger', "Cancel order {$o['ref']}? The trucks and items are released.");
         }
-        $next = $o['status'] === 'requested'
-            ? Ui::card('Next: requirements', '<ul class="list"><li><span>Valid government ID of the person signing</span>' . Ui::pill('info', 'Milestone 3') . '</li>'
-                . '<li><span>Driver\'s licence of whoever operates on site</span>' . Ui::pill('info', 'Milestone 3') . '</li>'
-                . '<li><span>Deposit of ' . Ui::e(Ui::money($o['deposit_amount'])) . '</span>' . Ui::pill('info', 'Milestone 3') . '</li>'
-                . '<li><span>Signed rental agreement</span>' . Ui::pill('info', 'Milestone 3') . '</li></ul>'
-                . '<p class="muted small" style="margin-top:8px">Uploads, deposit and e-signing open in the next milestone. Canpas confirms the order once all four are in.</p>')
-            : '';
-        $body = '<div class="split">' . Ui::card('Order', $dl) . Ui::card('Price', self::breakdown($draft)) . '</div>' . $next;
+        $showReq = !in_array($o['status'], ['cancelled', 'expired'], true) || !empty($o['gov_id_doc']) || !empty($o['signed_at']);
+        $body = '<div class="split">' . Ui::card('Order', $dl) . Ui::card('Price', self::breakdown($draft)) . '</div>'
+            . ($showReq ? RequirementsScreen::card($actor, $o) : '');
         Layout::page($actor, $page, $o['ref'], $body, $page === 'orders' ? 'Operations / Orders' : 'My account / My orders', $actions);
     }
 

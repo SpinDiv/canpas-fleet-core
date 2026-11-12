@@ -56,6 +56,7 @@ final class Nav
         'statements' => ['Statements', 'receipt', 'Finance', 'cf_settle_deposits', 'M5'],
         'reports' => ['Reports', 'chart', 'Finance', 'cf_view_reports', 'M5'],
         'settings' => ['Settings', 'settings', 'Account', 'cf_manage_settings', 'M1'],
+        'agreement' => ['Rental agreement', 'file', 'Account', 'cf_manage_settings', 'M3'],
         // Yard and drivers (phone-first)
         'loadings' => ['Loadings', 'stock', 'Yard', 'cf_count_stock', 'M4'],
         'returns' => ['Returns', 'returns', 'Yard', 'cf_count_stock', 'M4'],

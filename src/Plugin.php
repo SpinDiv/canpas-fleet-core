@@ -17,8 +17,9 @@ final class Plugin
         Portal\PublicPages::register();
         add_action('rest_api_init', [Http\Rest::class, 'register']);
 
-        // Hourly housekeeping: release expired holds.
+        // Hourly housekeeping: release expired holds, delete ID files past their retention date.
         add_action('canpas_fleet_hourly', [Domain\Orders::class, 'expireHolds']);
+        add_action('canpas_fleet_hourly', [Domain\Documents::class, 'purge']);
         if (!wp_next_scheduled('canpas_fleet_hourly')) {
             wp_schedule_event(time() + 300, 'hourly', 'canpas_fleet_hourly');
         }

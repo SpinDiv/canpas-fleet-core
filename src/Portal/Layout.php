@@ -243,6 +243,28 @@ input.qty{width:96px;height:36px;padding:0 10px;border:1px solid var(--line-2);b
   body{font-size:16px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.req{list-style:none;margin:0;padding:0}.req>li{padding:16px 0;border-top:1px solid var(--line)}.req>li:first-child{border-top:0;padding-top:4px}
+.req-head{display:flex;justify-content:space-between;align-items:center;gap:12px}.req-head b{font-size:14px;font-weight:600}
+.req-body{margin-top:8px;display:flex;flex-direction:column;gap:8px}.req-body p{margin:0}.req-body .table-wrap{margin-top:4px}
+.doc-line{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px}.doc-line .btn{height:30px;padding:0 10px;font-size:12px}
+.inline-form{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}.inline-form .field{min-width:260px;flex:0 1 360px}.inline-form .form-error{flex-basis:100%}
+details.upload summary{cursor:pointer;color:var(--link);font-size:13px;font-weight:500;padding:4px 0}details.upload[open] summary{margin-bottom:12px}
+details.upload .form{padding:16px;border:1px solid var(--line);border-radius:8px;background:#FBFCFD}
+.field input[type=file]{height:auto;padding:7px 8px;font-size:13px}
+.callout{padding:12px 16px;border-radius:8px;background:var(--warn-bg);color:var(--warn);margin-bottom:16px;font-size:13px}.callout.info{background:var(--info-bg);color:var(--info)}
+.bad-text{color:var(--bad)}
+.pre{white-space:pre-wrap;background:#F5F7FA;border-radius:8px;padding:12px 16px;margin-bottom:12px}
+.agreement{max-height:480px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:20px 24px;background:#FBFCFD;font-size:13px;line-height:1.6}
+.agreement h2{font-size:16px;margin:0 0 12px}.agreement h3{font-size:13px;font-weight:600;margin:16px 0 4px}.agreement p{margin:0 0 8px}
+.sigpad{position:relative;border:1px dashed var(--line-2);border-radius:8px;background:#fff;max-width:620px}
+.sigpad canvas{display:block;width:100%;height:auto;aspect-ratio:900/260;touch-action:none;cursor:crosshair}
+.sigpad .sig-line{position:absolute;left:24px;right:24px;bottom:28%;border-bottom:1px solid var(--line-2);pointer-events:none}
+.sigpad [data-sig-clear]{position:absolute;top:8px;right:8px;height:30px;padding:0 10px;font-size:12px}
+.label{font-size:12px;font-weight:500;color:var(--ink-2);letter-spacing:.02em}
+.tags li{font-size:12px;padding:6px 0}
+textarea.mono-area{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.55;height:auto;padding:10px 12px}
+.field textarea{height:auto;padding:8px 10px}
+@media (max-width:720px){.field input[type=file],.inline-form select{font-size:16px}.req-head{align-items:flex-start;flex-direction:column;gap:6px}}
 CSS;
     }
 }
