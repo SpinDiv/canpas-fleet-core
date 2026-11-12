@@ -27,7 +27,7 @@ final class Dashboard
         $kpis = '<div class="grid k4">'
             . Ui::kpi('Waiting for approval', (string) $companies['pending'], $companies['pending'] > 0 ? 'Company sign-ups to review' : 'Nothing to review', $companies['pending'] > 0 ? 'warn' : '')
             . Ui::kpi('Active customers', (string) $companies['approved'], $companies['suspended'] > 0 ? $companies['suspended'] . ' suspended' : 'Approved companies', $companies['suspended'] > 0 ? 'bad' : '')
-            . Ui::kpi('Trucks available', $truckAvail . ' of ' . $truckTotal, $fleet['repair'] > 0 ? $fleet['repair'] . ' trucks or units in repair' : 'None in repair', $fleet['repair'] > 0 ? 'warn' : '')
+            . Ui::kpi('Trucks available', $truckAvail . ' of ' . $truckTotal, $fleet['repair'] > 0 ? $fleet['repair'] . ($fleet['repair'] === 1 ? ' truck or unit' : ' trucks or units') . ' in repair' : 'None in repair', $fleet['repair'] > 0 ? 'warn' : '')
             . Ui::kpi('Items offered', (string) $items, 'Formwork, scaffolding, tools and heavy equipment')
             . '</div>';
 

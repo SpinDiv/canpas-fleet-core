@@ -158,7 +158,7 @@ HTML;
         return <<<'CSS'
 .auth{min-height:100vh;display:flex;flex-wrap:wrap}
 .auth-brand{flex:1 1 480px;background:var(--navy);color:#E7ECF5;padding:56px 64px;display:flex;flex-direction:column;justify-content:space-between;gap:48px}
-.auth-brand-top{display:flex;flex-direction:column;gap:10px}.auth-brand-top img{height:48px;width:auto}
+.auth-brand-top{display:flex;flex-direction:column;align-items:flex-start;gap:10px}.auth-brand-top img{height:48px;width:auto}
 .auth-brand-top span{font-size:12px;color:#9AA6BC;letter-spacing:.08em;text-transform:uppercase}
 .auth-pitch{max-width:460px;display:flex;flex-direction:column;gap:24px}
 .auth-headline{margin:0;font-size:32px;line-height:1.2;font-weight:600;color:#fff}
