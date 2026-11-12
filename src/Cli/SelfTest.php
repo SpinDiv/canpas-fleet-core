@@ -7,7 +7,11 @@ namespace Canpas\Fleet\Cli;
 use Canpas\Fleet\Audit\Audit;
 use Canpas\Fleet\Domain\Catalog;
 use Canpas\Fleet\Domain\Companies;
+use Canpas\Fleet\Domain\Distance;
+use Canpas\Fleet\Domain\Orders;
+use Canpas\Fleet\Domain\Pricing;
 use Canpas\Fleet\Domain\Settings;
+use Canpas\Fleet\Domain\Stock;
 use Canpas\Fleet\Portal\Nav;
 use Canpas\Fleet\Roles\Roles;
 use Canpas\Fleet\Support\Db;
@@ -105,6 +109,7 @@ final class SelfTest
 
             $admin = $mk('admin', Roles::ADMIN, null);
             self::milestone1($sfx, $admin, $dispatcher, $mk, $users, $companies);
+            self::milestone2($sfx, $admin, $dispatcher, $custA, $userB, $suspended);
         } catch (\Throwable $e) {
             self::check('Self-test ran to completion', false, get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
         } finally {
@@ -228,6 +233,107 @@ final class SelfTest
         }
     }
 
+    /** Milestone 2: pricing, distance, stock, availability, holds, order access. */
+    private static function milestone2(string $sfx, Actor $admin, Actor $dispatcher, Actor $custA, Actor $userB, Actor $suspended): void
+    {
+        $savedSettings = get_option(Settings::OPTION, null);
+        try {
+            Settings::save($admin, ['yard_lat' => '14.329400', 'yard_lng' => '120.936700', 'hold_hours' => 24, 'driver_km_basis' => 'round_trip', 'trips_per_rental' => '2', 'delivery_truck_type' => '']);
+
+            // Pricing rules (spec worked example).
+            $rates = ['starting_fee' => 3000, 'rate_per_km' => 50, 'driver_flat_fee' => 1500, 'driver_flat_km' => 10, 'driver_rate_per_km' => 30, 'daily_rate' => 0, 'free_km' => 0];
+            $t = Pricing::truckTrip($rates, 36, true);
+            self::check('Truck price matches the spec example: 36 km 10-wheeler with driver = ₱7,080', $t['total'] === 7080.0 && $t['driver'] === 2280.0, (string) $t['total']);
+            self::check('Deposit at 30% of ₱7,080 = ₱2,124', Pricing::deposit('percent', 30, 7080) === 2124.0);
+            self::check('One-way driver basis counts the flat 10 km each way (₱1,980)', Pricing::truckTrip($rates, 36, true, 0, 'one_way')['driver'] === 1980.0);
+            $fd = Pricing::truckTrip(['free_km' => 6, 'daily_rate' => 1000] + $rates, 36, false, 3);
+            self::check('Free km reduce the distance charge; daily rate × days is added', $fd['distance'] === 1500.0 && $fd['daily'] === 3000.0 && $fd['driver'] === 0.0);
+            $item = ['rate_day' => 8, 'rate_week' => 45, 'rate_month' => 150, 'min_days' => 7];
+            $e40 = Pricing::equipment($item, 100, 40);
+            self::check('100 frames for 40 days = 1 month + 1 week + 3 days = ₱21,900', $e40['amount'] === 21900.0 && Pricing::periodLabel($e40) === '1 month + 1 week + 3 days', (string) $e40['amount']);
+            self::check('Minimum rental applies: 3 days is charged as the 7-day minimum (₱45)', Pricing::equipment($item, 1, 3)['unit_price'] === 45.0);
+            self::check('Cheapest mix is used: 9 days = 1 week + 2 days (₱61), never 2 weeks', Pricing::equipment($item, 1, 9)['unit_price'] === 61.0);
+
+            // Distance.
+            self::expect('A site outside the Philippines is refused', 'outside_service_area', static fn() => Distance::parseCoords('51.5072, -0.1276'));
+            [$lat, $lng] = Distance::parseCoords('14.4296, 120.9367');
+            $dist = Distance::roundTrip($lat, $lng);
+            $hasKey = defined('CANPAS_GOOGLE_SERVER_KEY') && CANPAS_GOOGLE_SERVER_KEY !== '';
+            self::check('Round-trip distance is worked out from the yard' . ($hasKey ? ' (Google)' : ' (estimate until the Google key is set)'),
+                $dist['km'] > 0 && $dist['source'] === ($hasKey ? 'routes' : 'estimate'), $dist['km'] . ' km, ' . $dist['source']);
+
+            // Test catalog.
+            $typeId = Catalog::saveTruckType($admin, ['name' => "Selftest M2 truck {$sfx}", 'deposit_mode' => 'percent', 'deposit_value' => 30, 'active' => 1] + $rates);
+            Catalog::saveTruck($admin, ['type_id' => $typeId, 'plate' => "TA{$sfx}", 'odometer_km' => 0, 'status' => 'available']);
+            Catalog::saveTruck($admin, ['type_id' => $typeId, 'plate' => "TB{$sfx}", 'odometer_km' => 0, 'status' => 'repair']);
+            $frame = Catalog::saveItem($admin, ['name' => "Selftest M2 frame {$sfx}", 'category' => 'scaffolding', 'unit' => 'pc', 'deposit_mode' => 'percent', 'deposit_value' => 30,
+                'replacement_cost' => 2500, 'damage_fee' => 600, 'active' => 1] + $item);
+            $heavy = Catalog::saveItem($admin, ['name' => "Selftest M2 backhoe {$sfx}", 'category' => 'heavy', 'unit' => 'unit', 'deposit_mode' => 'percent', 'deposit_value' => 30,
+                'replacement_cost' => 0, 'damage_fee' => 0, 'active' => 1, 'rate_day' => 3500, 'rate_week' => 21000, 'rate_month' => 75000, 'min_days' => 1]);
+
+            // Stock ledger.
+            self::expect('A dispatcher cannot change stock', 'forbidden', static fn() => Stock::adjust($dispatcher, $frame, 100, 'opening'));
+            self::expect('Removing stock with a "received" reason is refused', 'invalid_input', static fn() => Stock::adjust($admin, $frame, -5, 'purchase'));
+            self::expect('Heavy equipment is not counted by quantity', 'not_quantity', static fn() => Stock::adjust($admin, $heavy, 1, 'opening'));
+            Stock::adjust($admin, $frame, 100, 'opening');
+            self::check('Stock on hand is the sum of movements', Stock::onHand($frame) === 100);
+            self::expect('Stock cannot go below zero', 'negative_stock', static fn() => Stock::adjust($admin, $frame, -101, 'write_off'));
+
+            // Quotes and booking.
+            $start = Db::todayManila()->modify('+10 days')->format('Y-m-d');
+            $q = Orders::quoteEquipment($custA, ['start_date' => $start, 'days' => 40, 'fulfilment' => 'pickup', "qty[{$frame}]" => 100]);
+            self::check('Equipment quote: 100 frames, 40 days, pickup = ₱21,900, deposit ₱6,570', $q['subtotal'] === 21900.0 && $q['deposit'] === 6570.0, $q['subtotal'] . ' / ' . $q['deposit']);
+            $qd = Orders::quoteEquipment($custA, ['start_date' => $start, 'days' => 7, 'fulfilment' => 'delivery', 'site_address' => 'Imus, Cavite', 'site_coords' => '14.4296, 120.9367', "qty[{$frame}]" => 10]);
+            $deliveryLine = array_values(array_filter($qd['lines'], static fn($l) => $l['line_type'] === 'delivery'))[0] ?? null;
+            self::check('Delivery adds truck trips with a driver (delivery and pickup = 2 trips)', $deliveryLine !== null && $deliveryLine['qty'] === 2 && $deliveryLine['amount'] > 0);
+            self::expect('A past start date is refused', 'invalid_input', static fn() => Orders::quoteEquipment($custA, ['start_date' => Db::todayManila()->modify('-1 day')->format('Y-m-d'), 'days' => 7, 'fulfilment' => 'pickup', "qty[{$frame}]" => 1]));
+            self::expect('Staff cannot place customer orders', 'forbidden', static fn() => Orders::bookEquipment($dispatcher, ['start_date' => $start, 'days' => 7, 'fulfilment' => 'pickup', "qty[{$frame}]" => 1]));
+            self::expect('A suspended company cannot book', 'company_inactive', static fn() => Orders::bookEquipment($suspended, ['start_date' => $start, 'days' => 7, 'fulfilment' => 'pickup', "qty[{$frame}]" => 1]));
+
+            $o1 = Orders::bookEquipment($custA, ['start_date' => $start, 'days' => 7, 'fulfilment' => 'pickup', "qty[{$frame}]" => 60, 'total' => '1', 'subtotal' => '1']);
+            $order = Orders::get($custA, $o1);
+            self::check('A booking gets an order number like ORD-2611-0001 and is held', (bool) preg_match('/^ORD-\d{4}-\d{4,}$/', $order['ref']) && $order['status'] === 'requested' && $order['hold_active'], $order['ref']);
+            self::check('Prices sent by the browser are ignored (60 frames × 7 days = ₱2,700)', (float) $order['total'] === 2700.0, (string) $order['total']);
+
+            $endA = Db::todayManila()->modify('+16 days')->format('Y-m-d');
+            self::expect('Overbooking is refused: 50 more frames on the same dates (only 40 free)', 'not_available',
+                static fn() => Orders::bookEquipment($userB, ['start_date' => $start, 'days' => 7, 'fulfilment' => 'pickup', "qty[{$frame}]" => 50]));
+            $after = Db::todayManila()->modify('+17 days')->format('Y-m-d');
+            $o2 = Orders::bookEquipment($userB, ['start_date' => $after, 'days' => 7, 'fulfilment' => 'pickup', "qty[{$frame}]" => 50]);
+            self::check('The same stock can be booked again on dates that do not overlap', Orders::get($userB, $o2)['status'] === 'requested');
+            self::check('Free stock is worked out per day (40 free during the first booking)', Orders::itemFree($frame, $start, $endA) === 40);
+
+            Catalog::saveItem($admin, ['rate_day' => 9, 'rate_week' => 50, 'rate_month' => 160], $frame);
+            $line = Orders::get($custA, $o1)['lines'][0];
+            self::check('Changing a rate later does not change an existing order', (float) json_decode($line['rates_json'], true)['rate_day'] === 8.0 && (float) $line['amount'] === 2700.0);
+
+            // Trucks: one available, one in repair.
+            $truckIn = ['truck_type_id' => $typeId, 'start_date' => $start, 'days' => 2, 'site_address' => 'Imus, Cavite', 'site_coords' => '14.4296, 120.9367', 'needs_driver' => '1'];
+            Orders::bookTruck($custA, $truckIn);
+            self::expect('A truck type with one free truck cannot be booked twice for the same dates (the one in repair does not count)', 'not_available', static fn() => Orders::bookTruck($userB, $truckIn));
+
+            // Access between companies.
+            self::expect('Another company cannot open this order', 'not_found', static fn() => Orders::get($userB, $o1));
+            $listA = array_column(Orders::list($custA), 'id');
+            $listB = array_column(Orders::list($userB), 'id');
+            self::check("Order lists show only the company's own orders", in_array($o1, $listA, true) && !in_array($o1, $listB, true));
+
+            // Holds.
+            Db::exec(Db::prepare('UPDATE ' . Db::t('orders') . ' SET hold_expires_at = %s WHERE id = UNHEX(%s)', '2000-01-01 00:00:00.000000', $o1));
+            self::check('An expired hold frees its stock straight away', Orders::itemFree($frame, $start, $endA) === 100);
+            Orders::expireHolds();
+            self::check('The hourly job marks expired holds', Orders::get($custA, $o1)['status'] === 'expired');
+
+            // Cancelling.
+            self::expect('Staff must give a reason to cancel', 'reason_required', static fn() => Orders::cancel($dispatcher, $o2, ''));
+            Orders::cancel($userB, $o2);
+            self::check('A customer can cancel their own held order', Orders::get($userB, $o2)['status'] === 'cancelled');
+            self::expect('A cancelled order cannot be cancelled again', 'wrong_status', static fn() => Orders::cancel($userB, $o2));
+        } finally {
+            $savedSettings === null ? delete_option(Settings::OPTION) : update_option(Settings::OPTION, $savedSettings, false);
+        }
+    }
+
     private static function expect(string $name, string $reason, callable $fn): void
     {
         try {
@@ -261,6 +367,10 @@ final class SelfTest
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('memberships') . ' WHERE user_id = %d', $uid));
         }
         foreach ($companies as $c) {
+            Db::exec(Db::prepare('DELETE l FROM ' . Db::t('order_lines') . ' l JOIN ' . Db::t('orders') . ' o ON o.id = l.order_id WHERE o.company_id = UNHEX(%s)', $c));
+            Db::exec(Db::prepare('DELETE FROM ' . Db::t('orders') . ' WHERE company_id = UNHEX(%s)', $c));
+        }
+        foreach ($companies as $c) {
             Files::delete((string) Db::value(Db::prepare('SELECT permit_file FROM ' . Db::t('companies') . ' WHERE id = UNHEX(%s)', $c)));
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('audit_log') . ' WHERE company_id = UNHEX(%s) OR object_id = UNHEX(%s)', $c, $c));
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('memberships') . ' WHERE company_id = UNHEX(%s)', $c));
@@ -268,6 +378,7 @@ final class SelfTest
         }
         $like = '%' . Db::wpdb()->esc_like($sfx) . '%';
         $likeUp = '%' . Db::wpdb()->esc_like(strtoupper($sfx)) . '%';
+        Db::exec(Db::prepare('DELETE m FROM ' . Db::t('stock_movements') . ' m JOIN ' . Db::t('equipment_items') . ' i ON i.id = m.item_id WHERE i.name LIKE %s', $like));
         Db::exec(Db::prepare('DELETE FROM ' . Db::t('equipment_units') . ' WHERE serial LIKE %s', $likeUp));
         Db::exec(Db::prepare('DELETE FROM ' . Db::t('equipment_items') . ' WHERE name LIKE %s', $like));
         Db::exec(Db::prepare('DELETE FROM ' . Db::t('trucks') . ' WHERE plate LIKE %s', $likeUp));

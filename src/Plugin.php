@@ -16,6 +16,12 @@ final class Plugin
         Portal\Login::register();
         Portal\PublicPages::register();
         add_action('rest_api_init', [Http\Rest::class, 'register']);
+
+        // Hourly housekeeping: release expired holds.
+        add_action('canpas_fleet_hourly', [Domain\Orders::class, 'expireHolds']);
+        if (!wp_next_scheduled('canpas_fleet_hourly')) {
+            wp_schedule_event(time() + 300, 'hourly', 'canpas_fleet_hourly');
+        }
     }
 
     /** Public URL of a file inside this plugin. Works from wp-content/plugins and from the Novamira sandbox. */

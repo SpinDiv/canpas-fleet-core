@@ -22,13 +22,12 @@ final class Dashboard
         $trucks = Catalog::trucks();
         $truckTotal = count(array_filter($trucks, static fn($t) => $t['status'] !== 'retired'));
         $truckAvail = count(array_filter($trucks, static fn($t) => $t['status'] === 'available'));
-        $items = count(Catalog::items(null, true));
 
         $kpis = '<div class="grid k4">'
             . Ui::kpi('Waiting for approval', (string) $companies['pending'], $companies['pending'] > 0 ? 'Company sign-ups to review' : 'Nothing to review', $companies['pending'] > 0 ? 'warn' : '')
             . Ui::kpi('Active customers', (string) $companies['approved'], $companies['suspended'] > 0 ? $companies['suspended'] . ' suspended' : 'Approved companies', $companies['suspended'] > 0 ? 'bad' : '')
             . Ui::kpi('Trucks available', $truckAvail . ' of ' . $truckTotal, $fleet['repair'] > 0 ? $fleet['repair'] . ($fleet['repair'] === 1 ? ' truck or unit' : ' trucks or units') . ' in repair' : 'None in repair', $fleet['repair'] > 0 ? 'warn' : '')
-            . Ui::kpi('Items offered', (string) $items, 'Formwork, scaffolding, tools and heavy equipment')
+            . Ui::kpi('Orders on hold', (string) (\Canpas\Fleet\Domain\Orders::counts()['requested'] ?? 0), 'Waiting for customer requirements')
             . '</div>';
 
         // Needs attention: pending sign-ups and documents expiring within 30 days.

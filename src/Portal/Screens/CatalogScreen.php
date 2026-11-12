@@ -115,7 +115,8 @@ final class CatalogScreen
         $body = Ui::tabs(['' => 'All', 'formwork' => 'Formwork', 'scaffolding' => 'Scaffolding', 'tools' => 'Small tools & accessories'], $cat, 'cat');
         $body .= self::editor($canEdit, $editing, 'Item', 'items', self::itemFields(false), [], ['category' => $cat ?: 'scaffolding', 'unit' => 'pc', 'min_days' => 7, 'deposit_mode' => 'percent', 'active' => 1]);
         $body .= Ui::card('Items and rates', self::itemTable(Catalog::items($cat !== '' ? $cat : 'nonheavy'), $canEdit, null, false));
-        $body .= '<p class="muted small" style="margin-top:12px">Quantities owned, out on rent and available by date arrive with ordering in milestone 2. Customers are charged the cheapest mix of months, weeks and days, never less than the minimum rental.</p>';
+        $body .= OrdersScreen::stockSection($actor);
+        $body .= '<p class="muted small" style="margin-top:12px">Stock on hand is the total of every addition and removal, each recorded with who made it. Customers are charged the cheapest mix of months, weeks and days, never less than the minimum rental.</p>';
         Layout::page($actor, 'stock', 'Formwork & scaffolding', $body, 'Fleet & stock');
     }
 

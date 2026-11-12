@@ -138,16 +138,15 @@ final class CompaniesScreen
         $first = Ui::e(explode(' ', trim(wp_get_current_user()->display_name))[0] ?? '');
         $kpis = '<div class="grid k4">'
             . Ui::kpi('Company', $c['name'], 'Account ' . strtolower(Ui::label($c['status'])))
-            . Ui::kpi('Active orders', '0', 'Ordering opens in milestone 2')
+            . Ui::kpi('Orders on hold', (string) count(array_filter(\Canpas\Fleet\Domain\Orders::list($actor), static fn($o) => $o['status'] === 'requested')), 'Waiting for requirements')
             . Ui::kpi('People who can book', (string) $people)
             . '</div>';
         $next = Ui::card('Coming next', '<ul class="list">'
-            . '<li><span>Book trucks and rent formwork, scaffolding and heavy equipment, with the price shown at once</span>' . Ui::pill('info', 'Milestone 2') . '</li>'
             . '<li><span>Upload IDs, pay the deposit and sign the rental agreement online</span>' . Ui::pill('info', 'Milestone 3') . '</li>'
             . '<li><span>Track deliveries, equipment on site and returns</span>' . Ui::pill('info', 'Milestone 4') . '</li>'
             . '<li><span>Statements and final bills</span>' . Ui::pill('info', 'Milestone 5') . '</li>'
             . '</ul>');
-        $actions = $actor->can('cf_manage_company_users') ? '<a class="btn" href="' . esc_url(Router::url('company-users')) . '">Manage company users</a>' : '';
+        $actions = '<a class="btn" href="' . esc_url(Router::url('book-truck')) . '">Book a truck</a><a class="btn primary" href="' . esc_url(Router::url('rent')) . '">Rent equipment</a>';
         Layout::page($actor, 'home', 'Welcome, ' . html_entity_decode($first), $kpis . $next, $c['name'], $actions);
     }
 }

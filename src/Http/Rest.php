@@ -6,8 +6,12 @@ namespace Canpas\Fleet\Http;
 
 use Canpas\Fleet\Domain\Catalog;
 use Canpas\Fleet\Domain\Companies;
+use Canpas\Fleet\Domain\Orders;
 use Canpas\Fleet\Domain\Settings;
+use Canpas\Fleet\Domain\Stock;
 use Canpas\Fleet\Portal\Nav;
+use Canpas\Fleet\Portal\Router;
+use Canpas\Fleet\Portal\Screens\OrdersScreen;
 use Canpas\Fleet\Support\DomainError;
 use Canpas\Fleet\Tenancy\Actor;
 
@@ -92,6 +96,26 @@ final class Rest
             self::post('/' . $path . '/' . self::ID, static fn(Actor $a, \WP_REST_Request $r): array => ['id' => [Catalog::class, $method]($a, self::body($r), (string) $r['id']), 'message' => 'Saved.']);
         }
 
+        // Ordering: quotes (nothing saved) and bookings. Prices are always recalculated on the server.
+        foreach (['truck' => 'Truck', 'equipment' => 'Equipment'] as $kind => $Kind) {
+            self::post('/quote/' . $kind, static function (Actor $a, \WP_REST_Request $r) use ($Kind): array {
+                $d = [Orders::class, 'quote' . $Kind]($a, self::body($r));
+                return ['subtotal' => $d['subtotal'], 'deposit' => $d['deposit'], 'html' => OrdersScreen::breakdown($d)];
+            });
+            self::post('/orders/' . $kind, static function (Actor $a, \WP_REST_Request $r) use ($Kind): array {
+                $id = [Orders::class, 'book' . $Kind]($a, self::body($r));
+                return ['id' => $id, 'message' => 'Booked and held for you. Complete the requirements before the hold ends.', 'redirect' => add_query_arg('id', $id, Router::url('my-orders'))];
+            });
+        }
+        self::post('/orders/' . self::ID . '/cancel', static function (Actor $a, \WP_REST_Request $r): array {
+            Orders::cancel($a, (string) $r['id'], (string) $r->get_param('reason'));
+            return ['message' => 'Order cancelled.'];
+        });
+        self::post('/stock', static function (Actor $a, \WP_REST_Request $r): array {
+            Stock::adjust($a, (string) $r->get_param('item_id'), (int) $r->get_param('qty'), (string) $r->get_param('reason'), (string) $r->get_param('note'));
+            return ['message' => 'Stock updated.'];
+        });
+
         // Settings.
         self::post('/settings', static function (Actor $a, \WP_REST_Request $r): array {
             Settings::save($a, self::body($r));
@@ -113,6 +137,8 @@ final class Rest
     private static function body(\WP_REST_Request $r): array
     {
         $p = $r->get_json_params() ?: $r->get_body_params();
+        // Never let the browser set money fields; the domain recalculates them anyway.
+        unset($p['total'], $p['subtotal'], $p['deposit'], $p['deposit_amount']);
         unset($p['id'], $p['_wpnonce']);
         return is_array($p) ? $p : [];
     }

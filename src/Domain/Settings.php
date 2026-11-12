@@ -25,6 +25,7 @@ final class Settings
         'km_tolerance_pct' => ['Km difference allowed before re-billing (%)', 'int', 5, 0, 50],
         'driver_km_basis' => ['Driver flat-rate km counted on', 'enum:round_trip|one_way', 'round_trip', null, null],
         'trips_per_rental' => ['Truck trips per equipment rental', 'enum:1|2', '2', null, null],
+        'delivery_truck_type' => ['Truck type used to price equipment delivery', 'id', '', null, null],
         'payment_instructions' => ['Payment instructions (bank, GCash)', 'textarea', '', null, null],
         'notify_email' => ['Email for new sign-ups and alerts', 'email', '', null, null],
         'document_retention_days' => ['Delete customer IDs after (days)', 'int', 1095, 30, 3650],
@@ -91,6 +92,12 @@ final class Settings
                     throw new DomainError('invalid_setting', "{$label} must be between {$min} and {$max}.", ['field' => $key]);
                 }
                 return $n;
+            case 'id':
+                $v = strtolower((string) $v);
+                if ($v !== '' && !preg_match('/^[0-9a-f]{32}$/', $v)) {
+                    throw new DomainError('invalid_setting', "{$label}: choose one of the options.", ['field' => $key]);
+                }
+                return $v;
             case 'email':
                 if ($v !== '' && !is_email((string) $v)) {
                     throw new DomainError('invalid_setting', "{$label} is not a valid email address.", ['field' => $key]);

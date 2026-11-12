@@ -53,6 +53,10 @@ final class Pages
         'heavy-equipment' => [Screens\CatalogScreen::class, 'heavy'],
         'stock' => [Screens\CatalogScreen::class, 'stock'],
         'settings' => [Screens\SettingsScreen::class, 'render'],
+        'orders' => [Screens\OrdersScreen::class, 'staffOrders'],
+        'book-truck' => [Screens\OrdersScreen::class, 'bookTruck'],
+        'rent' => [Screens\OrdersScreen::class, 'rent'],
+        'my-orders' => [Screens\OrdersScreen::class, 'myOrders'],
     ];
 
     public static function render(Actor $actor, string $slug): void

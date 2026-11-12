@@ -223,6 +223,15 @@ main>.grid+.split,main>.split+.split,main>.split+.card{margin-top:16px}
 details.adder{padding:16px 20px}details.adder summary{list-style:none;cursor:pointer;display:inline-block}details.adder summary::-webkit-details-marker{display:none}
 details.adder[open] summary .btn{background:#fff;color:var(--ink);border-color:var(--line-2)}
 main>details+.card,main>.tabs+details,main>details+details{margin-top:16px}main>.card+.card{margin-top:16px}
+.quote-box{margin-top:16px;padding:16px;border:1px solid var(--line);border-radius:8px;background:#FBFCFE}
+.quote-box .table-wrap{margin:0}.quote-box th,.quote-box td{padding-left:8px;padding-right:8px}
+.totals{display:grid;grid-template-columns:1fr auto;gap:6px 16px;margin:12px 0 8px;padding-top:12px;border-top:1px solid var(--line)}
+.totals dt{color:var(--ink-2)}.totals dd{margin:0;text-align:right;font-weight:600}.totals dt:first-child,.totals dd:nth-child(2){font-size:16px}
+h3.cat{margin:20px 0 4px;font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.items .table-wrap{margin:0}.items th,.items td{padding-left:8px;padding-right:8px}
+input.qty{width:96px;height:36px;padding:0 10px;border:1px solid var(--line-2);border-radius:6px;font:inherit;text-align:right}
+.field small{font-size:12px}
+.form-actions button[disabled]{opacity:.5;cursor:not-allowed}
 .head-row{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:20px}.head-row h1{margin:0}
 @media (max-width:820px){
   .side{flex:1 1 100%;flex-direction:row;flex-wrap:nowrap;overflow-x:auto;padding:8px;gap:4px;align-items:center}

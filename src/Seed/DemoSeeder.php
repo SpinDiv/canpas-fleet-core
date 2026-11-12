@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Canpas\Fleet\Seed;
 
 use Canpas\Fleet\Domain\Catalog;
+use Canpas\Fleet\Domain\Settings;
+use Canpas\Fleet\Domain\Stock;
 use Canpas\Fleet\Roles\Roles;
 use Canpas\Fleet\Support\Db;
 use Canpas\Fleet\Support\DomainError;
@@ -100,12 +102,25 @@ final class DemoSeeder
             ['Adjustable steel prop 3.0 m', 'formwork', 'pc', 6, 35, 120, 14, 1800, 450, 15],
             ['Swivel coupler', 'tools', 'pc', 1, 6, 20, 7, 180, 60, 1.2],
         ];
+        $stockQty = ['Scaffold frame 1.7 m' => 1200, 'Cross brace 1.8 m' => 1000, 'Adjustable jack base' => 600,
+            'Wall formwork panel 1.2 × 2.4 m' => 800, 'Adjustable steel prop 3.0 m' => 400, 'Swivel coupler' => 3000];
         foreach ($items as [$name, $cat, $unit, $d, $w, $m, $min, $rep, $dmg, $kg]) {
             $try(static fn() => Catalog::saveItem($admin, [
                 'name' => $name, 'category' => $cat, 'unit' => $unit, 'rate_day' => $d, 'rate_week' => $w, 'rate_month' => $m,
                 'min_days' => $min, 'deposit_mode' => 'percent', 'deposit_value' => 30, 'replacement_cost' => $rep, 'damage_fee' => $dmg,
                 'weight_kg' => $kg, 'active' => 1,
             ]), "item {$name}");
+        }
+        foreach ($stockQty as $name => $n) {
+            $itemId = (string) Db::value(Db::prepare('SELECT LOWER(HEX(id)) FROM ' . Db::t('equipment_items') . ' WHERE name = %s', $name));
+            if ($itemId !== '' && Stock::onHand($itemId) === 0) {
+                Stock::adjust($admin, $itemId, $n, 'opening', 'Sample opening stock');
+                $out[] = "Opening stock {$n} × {$name}";
+            }
+        }
+        if ((string) Settings::get('yard_lat') === '') {
+            Settings::save($admin, ['yard_address' => 'Sample yard: Dasmariñas, Cavite (replace with the real Canpas yard)', 'yard_lat' => '14.329400', 'yard_lng' => '120.936700']);
+            $out[] = 'Sample yard location set (Dasmariñas, Cavite)';
         }
         $heavy = [
             ['Backhoe loader', 3500, 21000, 75000, 'BH-02'],
