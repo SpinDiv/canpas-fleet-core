@@ -1,0 +1,20 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Dependencies and build output
+/vendor/
+/node_modules/
+*.zip
+
+# Never commit secrets, logs, database dumps or private customer files
+.env
+*.env
+*.log
+*.sql
+*.key
+*.pem
+private/
+canpas-private/
