@@ -14,7 +14,7 @@ use Canpas\Fleet\Tenancy\Actor;
  */
 final class Router
 {
-    private const REWRITE_VERSION = '1';
+    private const REWRITE_VERSION = '2';
 
     public static function register(): void
     {
@@ -51,6 +51,15 @@ final class Router
         header('Referrer-Policy: same-origin');
         header('X-Content-Type-Options: nosniff');
 
+        if ($page === 'login' || $page === 'register') {
+            if (is_user_logged_in()) {
+                wp_safe_redirect(self::url());
+                exit;
+            }
+            $page === 'login' ? PublicPages::login() : PublicPages::registerPage();
+            exit;
+        }
+
         if (!is_user_logged_in()) {
             wp_safe_redirect(wp_login_url(self::url($page === 'home' ? '' : $page)));
             exit;
@@ -74,6 +83,11 @@ final class Router
         }
         if (!$actor->companyActive()) {
             Layout::message('Your company account is on hold', 'Bookings are paused for your company. Please contact Canpas to resolve this.', 403);
+            exit;
+        }
+
+        if ($page === 'file') {
+            Pages::file($actor);
             exit;
         }
 

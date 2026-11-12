@@ -47,7 +47,7 @@ final class Nav
         'calendar' => ['Calendar', 'cal', 'Operations', 'cf_dispatch', 'M4'],
         'trucks' => ['Trucks', 'truck', 'Fleet & stock', 'cf_assign_fleet', 'M1'],
         'heavy-equipment' => ['Heavy equipment', 'heavy', 'Fleet & stock', 'cf_assign_fleet', 'M1'],
-        'stock' => ['Formwork & scaffolding', 'stock', 'Fleet & stock', 'cf_assign_fleet', 'M2'],
+        'stock' => ['Formwork & scaffolding', 'stock', 'Fleet & stock', 'cf_assign_fleet', 'M1'],
         'maintenance' => ['Maintenance', 'wrench', 'Fleet & stock', 'cf_manage_fleet', 'M5'],
         'companies' => ['Companies', 'building', 'Customers', 'cf_manage_companies', 'M1'],
         'documents' => ['Documents', 'file', 'Customers', 'cf_view_documents', 'M3'],

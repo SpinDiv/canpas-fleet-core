@@ -11,7 +11,8 @@ Truck and equipment rental system for Canpas Philippines, built by Spindiv Kinet
 - Business-rule refusals throw `Support\DomainError` with a stable reason code (e.g. `hold_expired`, `forbidden`).
 - The company always comes from the user's membership, never from request input. Staff have no company.
 - WordPress administrators have no portal data access; the Canpas owner uses the `cf_admin` role.
-- Catalog and rates (truck types, trucks, equipment items) are JetEngine post types edited in wp-admin; everything that grows daily is a custom table.
+- Catalog and rates (truck types, trucks, equipment items, heavy units) are custom tables edited in the portal (Trucks, Heavy equipment, Formwork & scaffolding); JetEngine is not used by the plugin. Rate edits need `cf_manage_rates`, physical fleet edits `cf_manage_fleet`.
+- Portal screens live in `src/Portal/Screens/`, build HTML with `Portal\Ui` (escapes text) and submit through `assets/portal.js` to REST.
 
 ## Rules that must not break
 - An order cannot be confirmed until ID, licence (with expiry after the rental end), deposit and signed agreement are all in.

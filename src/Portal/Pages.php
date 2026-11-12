@@ -42,13 +42,43 @@ final class Pages
         'company-users' => 'Add and remove the people in your company who can book.',
     ];
 
+    /** Screens that are built. Everything else shows its planned description. */
+    private const BUILT = [
+        'dashboard' => [Screens\Dashboard::class, 'render'],
+        'approvals' => [Screens\CompaniesScreen::class, 'approvals'],
+        'companies' => [Screens\CompaniesScreen::class, 'companies'],
+        'company-users' => [Screens\CompaniesScreen::class, 'companyUsers'],
+        'home' => [Screens\CompaniesScreen::class, 'customerHome'],
+        'trucks' => [Screens\CatalogScreen::class, 'trucks'],
+        'heavy-equipment' => [Screens\CatalogScreen::class, 'heavy'],
+        'stock' => [Screens\CatalogScreen::class, 'stock'],
+        'settings' => [Screens\SettingsScreen::class, 'render'],
+    ];
+
     public static function render(Actor $actor, string $slug): void
     {
+        if (isset(self::BUILT[$slug])) {
+            (self::BUILT[$slug])($actor);
+            return;
+        }
         [$label, , $group, , $milestone] = Nav::PAGES[$slug];
-        $body = in_array($slug, ['dashboard', 'home', 'today', 'loadings'], true)
+        $body = in_array($slug, ['today', 'loadings'], true)
             ? self::welcome($actor, $slug)
             : self::planned($slug, $milestone);
         Layout::page($actor, $slug, $label, $body, $group);
+    }
+
+    /** Private file download (business permit for now), after a permission check that is logged. */
+    public static function file(Actor $actor): void
+    {
+        $company = strtolower(sanitize_key((string) ($_GET['company'] ?? '')));
+        try {
+            $f = \Canpas\Fleet\Domain\Companies::permitFile($actor, $company);
+        } catch (\Canpas\Fleet\Support\DomainError $e) {
+            Layout::message('Document not available', $e->getMessage(), 403);
+            return;
+        }
+        \Canpas\Fleet\Support\Files::stream($f['path'], $f['name']);
     }
 
     private static function planned(string $slug, string $milestone): string

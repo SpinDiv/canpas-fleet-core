@@ -14,6 +14,7 @@ final class Plugin
     {
         Portal\Router::register();
         Portal\Login::register();
+        Portal\PublicPages::register();
         add_action('rest_api_init', [Http\Rest::class, 'register']);
     }
 
