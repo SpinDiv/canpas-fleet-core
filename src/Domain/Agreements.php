@@ -153,7 +153,38 @@ TXT;
             '{{signer_name}}' => $signer !== '' ? $signer : '[name of the person signing]',
             '{{today}}' => $when->setTimezone(new \DateTimeZone('Asia/Manila'))->format('j F Y'),
         ];
-        return strtr((string) $version['body'], $map);
+        $n = (int) $order['days'];
+        return strtr((string) $version['body'], ['{{days}} days' => $n . ($n === 1 ? ' day' : ' days')] + $map);
+    }
+
+    /**
+     * Split agreement text into headings and paragraphs: blocks are separated by an empty line,
+     * and a line starting with "# " is a heading (the lines under it are its paragraph).
+     *
+     * @return list<array{0:string,1:string}> ['h'|'p', text]
+     */
+    public static function blocks(string $text): array
+    {
+        $out = [];
+        foreach (preg_split("/\n{2,}/", str_replace("\r\n", "\n", $text)) ?: [] as $block) {
+            $lines = explode("\n", trim($block));
+            $para = [];
+            foreach ($lines as $line) {
+                if (str_starts_with($line, '# ')) {
+                    if ($para !== []) {
+                        $out[] = ['p', implode("\n", $para)];
+                        $para = [];
+                    }
+                    $out[] = ['h', trim(substr($line, 2))];
+                } elseif (trim($line) !== '') {
+                    $para[] = $line;
+                }
+            }
+            if ($para !== []) {
+                $out[] = ['p', implode("\n", $para)];
+            }
+        }
+        return $out;
     }
 
     /**
@@ -291,16 +322,8 @@ TXT;
         $pdf = new Pdf($version['title'] . ' — ' . $o['ref'], 'Canpas · ' . $o['ref'] . ' · Agreement version ' . (int) $version['version']);
         $pdf->paragraph((string) $version['title'], 17, true, 2);
         $pdf->paragraph('Order ' . $o['ref'] . ' · Version ' . (int) $version['version'], 9, false, 10);
-        foreach (preg_split("/\n{2,}/", self::merged($o, $version, $name, $signedAt)) ?: [] as $block) {
-            $block = trim($block);
-            if ($block === '') {
-                continue;
-            }
-            if (str_starts_with($block, '# ')) {
-                $pdf->heading(substr($block, 2), 11.5);
-            } else {
-                $pdf->paragraph($block, 9.5);
-            }
+        foreach (self::blocks(self::merged($o, $version, $name, $signedAt)) as [$kind, $text]) {
+            $kind === 'h' ? $pdf->heading($text, 11.5) : $pdf->paragraph($text, 9.5);
         }
         $pdf->space(8);
         $pdf->rule();

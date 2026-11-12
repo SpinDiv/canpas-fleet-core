@@ -253,6 +253,7 @@ details.upload .form{padding:16px;border:1px solid var(--line);border-radius:8px
 .field input[type=file]{height:auto;padding:7px 8px;font-size:13px}
 .callout{padding:12px 16px;border-radius:8px;background:var(--warn-bg);color:var(--warn);margin-bottom:16px;font-size:13px}.callout.info{background:var(--info-bg);color:var(--info)}
 .bad-text{color:var(--bad)}
+.field input[type=checkbox]{width:16px;height:16px;padding:0;flex:none;accent-color:var(--accent)}.field.check.wide label{height:auto;align-items:flex-start;line-height:1.45}.field.check.wide input{margin-top:2px}
 .pre{white-space:pre-wrap;background:#F5F7FA;border-radius:8px;padding:12px 16px;margin-bottom:12px}
 .agreement{max-height:480px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:20px 24px;background:#FBFCFD;font-size:13px;line-height:1.6}
 .agreement h2{font-size:16px;margin:0 0 12px}.agreement h3{font-size:13px;font-weight:600;margin:16px 0 4px}.agreement p{margin:0 0 8px}

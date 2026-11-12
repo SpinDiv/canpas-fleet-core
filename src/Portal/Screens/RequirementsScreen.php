@@ -69,7 +69,7 @@ final class RequirementsScreen
             $foot = '<div class="form-actions" style="margin-top:16px">'
                 . ($blocking === []
                     ? Ui::action($o['status'] === 'needs_fix' ? 'Send to Canpas again' : 'Send to Canpas for checking', "orders/{$o['id']}/submit", 'primary')
-                    : '<button type="button" class="btn primary" disabled>Send to Canpas for checking</button><span class="muted small">Still needed: ' . Ui::e(implode(', ', array_map(static fn(string $k): string => strtolower(Requirements::LABELS[$k]), $blocking))) . '</span>')
+                    : '<button type="button" class="btn primary" disabled>Send to Canpas for checking</button><span class="muted small">Still needed: ' . Ui::e(implode(', ', array_map(static fn(string $k): string => lcfirst(Requirements::LABELS[$k]), $blocking))) . '</span>')
                 . '</div>';
         }
         return Ui::card('Requirements', $intro . '<ul class="req">' . $items . '</ul>' . $foot);
@@ -182,12 +182,8 @@ final class RequirementsScreen
         $user = wp_get_current_user();
         $text = Agreements::merged($o, $version, (string) $user->display_name);
         $html = '';
-        foreach (preg_split("/\n{2,}/", $text) ?: [] as $block) {
-            $block = trim($block);
-            if ($block === '') {
-                continue;
-            }
-            $html .= str_starts_with($block, '# ') ? '<h3>' . Ui::e(substr($block, 2)) . '</h3>' : '<p>' . nl2br(Ui::e($block)) . '</p>';
+        foreach (Agreements::blocks($text) as [$kind, $block]) {
+            $html .= $kind === 'h' ? '<h3>' . Ui::e($block) . '</h3>' : '<p>' . nl2br(Ui::e($block)) . '</p>';
         }
         $doc = '<div class="agreement" tabindex="0" aria-label="Agreement text"><h2>' . Ui::e($version['title']) . '</h2>' . $html . '</div>'
             . '<p class="muted small" style="margin-top:8px">Version ' . (int) $version['version'] . '. A PDF copy with your signature is saved on the order.</p>';
@@ -197,7 +193,7 @@ final class RequirementsScreen
             . '<div class="sigpad"><canvas width="900" height="260" data-signature="signature" role="img" aria-labelledby="sig-label"></canvas><span class="sig-line" aria-hidden="true"></span>'
             . '<button type="button" class="btn" data-sig-clear>Clear</button></div><input type="hidden" name="signature" value="">'
             . '<small class="muted">Sign with your finger, a stylus or the mouse.</small></div>'
-            . '<div class="field wide check"><label><input type="checkbox" name="agree" value="1"> I have read and agree to this agreement for ' . Ui::e($o['company_name']) . '.</label></div></div>'
+            . '<div class="field wide check"><label><input type="checkbox" name="agree" value="1"> I have read and agree to this agreement on behalf of ' . Ui::e(rtrim((string) $o['company_name'], '.')) . '.</label></div></div>'
             . '<p class="form-error" role="alert" hidden></p>'
             . '<div class="form-actions"><a class="btn" href="' . esc_url($back) . '">Back</a><button class="btn primary" type="submit">Sign agreement</button></div></form>';
         Layout::page($actor, 'my-orders', 'Sign agreement · ' . $o['ref'], Ui::card('', $doc) . Ui::card('Sign', $form), 'My account / My orders');

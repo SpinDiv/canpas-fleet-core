@@ -173,7 +173,7 @@ final class Requirements
         }
         $gaps = self::gaps($o);
         if ($gaps !== []) {
-            throw new DomainError('requirements_incomplete', 'Not ready to confirm: ' . implode(', ', array_map(static fn(string $k): string => strtolower(self::LABELS[$k]), $gaps)) . ' still need checking.', ['gaps' => $gaps]);
+            throw new DomainError('requirements_incomplete', 'Not ready to confirm: ' . implode(', ', array_map(static fn(string $k): string => lcfirst(self::LABELS[$k]), $gaps)) . ' still need checking.', ['gaps' => $gaps]);
         }
         Db::transaction(static function () use ($actor, $o): void {
             Db::exec(Db::prepare(
