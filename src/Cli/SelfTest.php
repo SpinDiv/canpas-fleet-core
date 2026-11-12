@@ -237,6 +237,7 @@ final class SelfTest
     private static function milestone2(string $sfx, Actor $admin, Actor $dispatcher, Actor $custA, Actor $userB, Actor $suspended): void
     {
         $savedSettings = get_option(Settings::OPTION, null);
+        Orders::$refPrefix = 'TST';
         try {
             Settings::save($admin, ['yard_lat' => '14.329400', 'yard_lng' => '120.936700', 'hold_hours' => 24, 'driver_km_basis' => 'round_trip', 'trips_per_rental' => '2', 'delivery_truck_type' => '']);
 
@@ -292,7 +293,7 @@ final class SelfTest
 
             $o1 = Orders::bookEquipment($custA, ['start_date' => $start, 'days' => 7, 'fulfilment' => 'pickup', "qty[{$frame}]" => 60, 'total' => '1', 'subtotal' => '1']);
             $order = Orders::get($custA, $o1);
-            self::check('A booking gets an order number like ORD-2611-0001 and is held', (bool) preg_match('/^ORD-\d{4}-\d{4,}$/', $order['ref']) && $order['status'] === 'requested' && $order['hold_active'], $order['ref']);
+            self::check('A booking gets an order number like ORD-2611-0001 and is held', (bool) preg_match('/^TST-\d{4}-\d{4,}$/', $order['ref']) && $order['status'] === 'requested' && $order['hold_active'], $order['ref']);
             self::check('Prices sent by the browser are ignored (60 frames × 7 days = ₱2,700)', (float) $order['total'] === 2700.0, (string) $order['total']);
 
             $endA = Db::todayManila()->modify('+16 days')->format('Y-m-d');
@@ -330,6 +331,7 @@ final class SelfTest
             self::check('A customer can cancel their own held order', Orders::get($userB, $o2)['status'] === 'cancelled');
             self::expect('A cancelled order cannot be cancelled again', 'wrong_status', static fn() => Orders::cancel($userB, $o2));
         } finally {
+            Orders::$refPrefix = 'ORD';
             $savedSettings === null ? delete_option(Settings::OPTION) : update_option(Settings::OPTION, $savedSettings, false);
         }
     }
@@ -383,7 +385,7 @@ final class SelfTest
         Db::exec(Db::prepare('DELETE FROM ' . Db::t('equipment_items') . ' WHERE name LIKE %s', $like));
         Db::exec(Db::prepare('DELETE FROM ' . Db::t('trucks') . ' WHERE plate LIKE %s', $likeUp));
         Db::exec(Db::prepare('DELETE FROM ' . Db::t('truck_types') . ' WHERE name LIKE %s', $like));
-        Db::exec(Db::prepare('DELETE FROM ' . Db::t('sequences') . ' WHERE name LIKE %s', 'T' . strtoupper(substr($sfx, 0, 3)) . '-%'));
+        Db::exec(Db::prepare('DELETE FROM ' . Db::t('sequences') . ' WHERE name LIKE %s OR name LIKE %s', 'T' . strtoupper(substr($sfx, 0, 3)) . '-%', 'TST-%'));
         require_once ABSPATH . 'wp-admin/includes/user.php';
         foreach ($users as $uid) {
             wp_delete_user($uid);

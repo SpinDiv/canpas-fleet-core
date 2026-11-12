@@ -42,6 +42,9 @@ final class Orders
 
     public const MAX_DAYS = 365;
 
+    /** Order number prefix. The self-test switches it to TST so it never uses up real order numbers. */
+    public static string $refPrefix = 'ORD';
+
     // ----- Quotes ------------------------------------------------------------------------------
 
     /** @param array<string, mixed> $in @return array<string, mixed> priced draft, nothing saved */
@@ -149,7 +152,7 @@ final class Orders
                 }
             }
             $id = Uuid::v7();
-            $ref = Sequence::ref('ORD');
+            $ref = Sequence::ref(self::$refPrefix);
             $hold = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->modify('+' . (int) Settings::get('hold_hours') . ' hours')->format('Y-m-d H:i:s.u');
             Db::insert('orders', [
                 'id' => $id, 'ref' => $ref, 'company_id' => $companyId, 'created_by' => $actor->userId,
