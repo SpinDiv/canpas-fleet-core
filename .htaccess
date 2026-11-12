@@ -1,0 +1,5 @@
+# Only images, CSS and JS may be served directly from this plugin folder.
+<FilesMatch "(?i)\.(php[0-9]?|phtml|phar|md|json|lock|git.*|sql|log)$">
+  Require all denied
+</FilesMatch>
+RedirectMatch 404 /\.git
