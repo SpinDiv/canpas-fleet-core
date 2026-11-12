@@ -196,7 +196,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}
 th{font-size:12px;font-weight:500;color:var(--muted);text-align:left;padding:10px 20px;border-bottom:1px solid var(--line);white-space:nowrap;letter-spacing:.02em}
 td{padding:10px 20px;border-bottom:1px solid #EEF1F5;vertical-align:middle}
 tr:last-child td{border-bottom:0}
-th.r,td.r{text-align:right}
+th.r,td.r{text-align:right;white-space:nowrap}
 td .btn{height:30px;padding:0 10px;font-size:12px}
 .row-actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
 .empty{color:var(--muted);margin:4px 0}
