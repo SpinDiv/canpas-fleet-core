@@ -2,6 +2,7 @@
 
 ## 0.6.3 — 2026-11-13
 
+- Phones and tablets: page content always starts right under the top bar (short pages such as the calendar were being pushed down).
 - Status tabs (Orders, Documents, Payments, Statements, Reports and others) are one sliding row instead of wrapping: swipe on phones and tablets, arrows on desktop, the selected tab scrolled into view, and counts shown as small badges.
 - Sign-in and request-account pages on tablets and phones show only the form card, centred on the screen (the dark brand panel is hidden below 1025px wide).
 
