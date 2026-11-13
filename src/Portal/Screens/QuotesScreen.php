@@ -55,6 +55,9 @@ final class QuotesScreen
                 $html .= '<p><b>Note from Canpas:</b> ' . Ui::e((string) $offer['note']) . '</p>';
             }
             $html .= '<p><a class="btn" href="' . esc_url(add_query_arg(['quote' => $o['id'], 'round' => (int) $offer['round']], Router::url('file'))) . '" target="_blank" rel="noopener">Download quotation (PDF)</a></p>';
+            if ($o['status'] === 'quoted') {
+                $html .= \Canpas\Fleet\Support\PayInfo::html((string) $o['ref']);
+            }
             if ($o['status'] === 'quoted' && $canPrice) {
                 $actions .= Ui::action('Withdraw quotation', "orders/{$o['id']}/quote-decline", 'danger', '', 'Why is Canpas withdrawing this quotation? The customer sees this reason.');
             }

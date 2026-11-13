@@ -156,13 +156,12 @@ final class BillingScreen
                 $methods .= '<option value="' . $k . '">' . Ui::e($l) . '</option>';
             }
         }
-        $instructions = trim((string) Settings::get('payment_instructions'));
         return '<details class="upload" open><summary>Pay the balance of ' . Ui::e(Ui::money($due)) . '</summary>'
-            . ($instructions !== '' ? '<div class="pre small">' . Ui::e($instructions) . '</div>' : '')
+            . \Canpas\Fleet\Support\PayInfo::html((string) $o['ref'])
             . '<form class="form" data-endpoint="orders/' . esc_attr($o['id']) . '/payments" novalidate><div class="form-grid">'
             . '<div class="field"><label for="bp-amount">Amount paid (₱)</label><input id="bp-amount" name="amount" inputmode="decimal" class="num" value="' . esc_attr(number_format($due, 2, '.', '')) . '" required></div>'
             . '<div class="field"><label for="bp-method">Paid by</label><select id="bp-method" name="method">' . $methods . '</select></div>'
-            . '<div class="field"><label for="bp-ref">Reference number</label><input id="bp-ref" name="reference" maxlength="80" required></div>'
+            . '<div class="field"><label for="bp-ref">Reference number</label><input id="bp-ref" name="reference" maxlength="80" value="' . esc_attr((string) $o['ref']) . '" required></div>'
             . '<div class="field"><label for="bp-proof">Receipt or screenshot</label><input id="bp-proof" name="proof" type="file" accept="image/*,application/pdf" required></div>'
             . '</div><p class="form-error" role="alert" hidden></p><div class="form-actions"><button class="btn primary" type="submit">Send proof</button></div></form></details>';
     }

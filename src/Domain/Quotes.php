@@ -116,6 +116,7 @@ final class Quotes
                 'paragraphs' => array_values(array_filter([
                     $note !== '' ? 'Note from Canpas: “' . $note . '”' : '',
                     'Accept it in the portal to hold it as your order, or ask for a better price. You can also download the quotation as a PDF.',
+                    "How to pay the deposit after you accept:\n" . \Canpas\Fleet\Support\PayInfo::text((string) $o['ref']),
                 ])),
                 'button' => ['label' => 'View the quotation', 'href' => self::customerLink($o['id'])],
             ]);
@@ -205,7 +206,7 @@ final class Quotes
             self::mail($email, "Order {$o['ref']} is held at your special rates", $o, 'quote_accept', [
                 'title' => 'Your order is held at the special rates',
                 'summary' => self::summary($o, (float) $offer['normal_total'], (float) $offer['total'], null) + [99 => ['Complete by', self::manila((string) $o['hold_expires_at'])]],
-                'paragraphs' => ['Send the ID, licence (if needed), deposit and signed agreement in the portal before the hold ends.'],
+                'paragraphs' => ['Send the ID, licence (if needed), deposit and signed agreement in the portal before the hold ends.', "How to pay:\n" . \Canpas\Fleet\Support\PayInfo::text((string) $o['ref'])],
                 'button' => ['label' => 'Complete the requirements', 'href' => self::customerLink($o['id'])],
             ]);
         }
@@ -454,6 +455,8 @@ final class Quotes
             $pdf->paragraph('Note from Canpas', 9, true, 0);
             $pdf->paragraph((string) $r['note'], 9.5, false, 8);
         }
+        $pdf->paragraph('HOW TO PAY', 9, true, 0);
+        $pdf->paragraph(\Canpas\Fleet\Support\PayInfo::text((string) $o['ref']), 9, false, 8);
         $pdf->paragraph('Terms', 9, true, 0);
         $pdf->paragraph('These special rates apply to this rental only and are valid until the date above, subject to availability. Accept the quotation in the Canpas portal to hold the order; the ID, licence (where needed), deposit and signed rental agreement are then required before Canpas confirms it. Late returns, extra kilometres, damage and missing items are charged at the rates in this quotation.', 8.5, false, 10);
         $by = $r['by_user'] ? self::userName((int) $r['by_user']) : 'Canpas';

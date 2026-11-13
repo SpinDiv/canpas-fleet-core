@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1 — 2026-11-13
+
+- **Payment accounts in Settings** (bank, GCash, Maya, with a payment note). Placeholders until Canpas fills in the real accounts; an account left empty is not shown. They appear as **How to pay** on the quotation PDF and screen, the quotation and acceptance emails, the deposit and balance forms, and the final bill PDF and email.
+- **Maya** added as a payment method beside bank transfer and GCash.
+- The payment form suggests the order number as the reference, so Canpas can match it in the bank or e-wallet statement.
+- Until online payment (PayMongo) is set up, customers pay to these accounts and upload a screenshot; Canpas checks it under Deposits & payments and marks it received or rejected.
+
 ## 0.7.0 — 2026-11-13
 
 - **Special-rate quotations.** The Canpas admin can allow a company (Companies → the company → Allow special rates) to request quotations. Its people see **Request a quotation** beside Book on the booking pages, with a note. The admin prices the request per line (each rate, or a % off all lines), previews the special price and sends it; the items are then held for 3 days (Settings), never past the day before the rental starts. Only the customer's company admin can accept, decline or ask for a better price. On accept the special rates become the order's rates, so the deposit, late days and extra km on the final bill use them. If the hold ends before the requirements are done, the quotation opens again at the same price while the items are free (both sides emailed); otherwise it expires. Every round is kept in the order history and the audit log.

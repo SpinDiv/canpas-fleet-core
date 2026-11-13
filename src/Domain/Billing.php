@@ -167,7 +167,7 @@ final class Billing
         $u = get_userdata((int) $o['created_by']);
         if ($u) {
             $lines = ["Your final bill {$inv['ref']} for order {$o['ref']} is ready.", 'Total: ₱' . number_format((float) $inv['total'], 2) . '. Deposit applied: ₱' . number_format((float) $inv['deposit_applied'], 2) . '.'];
-            $lines[] = (float) $inv['balance_due'] > 0 ? 'Balance to pay: ₱' . number_format((float) $inv['balance_due'], 2) . '. Pay by bank transfer or GCash and upload the proof on the order.'
+            $lines[] = (float) $inv['balance_due'] > 0 ? 'Balance to pay: ₱' . number_format((float) $inv['balance_due'], 2) . ".\n\nHow to pay:\n" . \Canpas\Fleet\Support\PayInfo::text((string) $o['ref'])
                 : ((float) $inv['refund_due'] > 0 ? 'Canpas will refund ₱' . number_format((float) $inv['refund_due'], 2) . ' of your deposit.' : 'Nothing more is due.');
             Mail::send($u->user_email, "Final bill {$inv['ref']} for order {$o['ref']}", $lines, ['label' => 'Open your order', 'href' => add_query_arg('id', $o['id'], Router::url('my-orders'))]);
         }
@@ -432,7 +432,10 @@ final class Billing
         }
         $pdf->space(14);
         $pdf->paragraph($inv['status'] === 'settled' ? 'Settled ' . (new \DateTimeImmutable((string) $inv['settled_at'], new \DateTimeZone('UTC')))->setTimezone(new \DateTimeZone('Asia/Manila'))->format('j F Y') . '. Thank you.'
-            : (trim((string) Settings::get('payment_instructions')) ?: 'Please contact Canpas for payment details.'), 9, false, 4);
+            : 'HOW TO PAY', 9, $inv['status'] !== 'settled', 2);
+        if ($inv['status'] !== 'settled') {
+            $pdf->paragraph(\Canpas\Fleet\Support\PayInfo::text((string) $o['ref']), 9, false, 6);
+        }
         $pdf->paragraph('Prices use the rates on the day of booking. Every change after booking is listed with its reason.', 8, false, 0);
         return $pdf->output();
     }

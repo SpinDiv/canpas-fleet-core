@@ -141,13 +141,12 @@ final class RequirementsScreen
         }
         if ($editable && $r['state'] !== 'ok') {
             $left = max(0, round($r['due'] - $r['received'] - $r['pending'], 2));
-            $instructions = trim((string) Settings::get('payment_instructions'));
             $html .= '<details class="upload"' . ($rows === [] ? ' open' : '') . '><summary>Send proof of payment</summary>'
-                . ($instructions !== '' ? '<div class="pre small">' . Ui::e($instructions) . '</div>' : '<p class="muted small">Ask Canpas for their bank or GCash details.</p>')
+                . \Canpas\Fleet\Support\PayInfo::html((string) $o['ref'])
                 . '<form class="form" data-endpoint="orders/' . esc_attr($o['id']) . '/payments" novalidate><div class="form-grid">'
                 . '<div class="field"><label for="p-amount">Amount paid (₱)</label><input id="p-amount" name="amount" inputmode="decimal" class="num" value="' . esc_attr($left > 0 ? number_format($left, 2, '.', '') : '') . '" required></div>'
                 . '<div class="field"><label for="p-method">Paid by</label><select id="p-method" name="method">' . self::options(Payments::METHODS, 'bank') . '</select></div>'
-                . '<div class="field"><label for="p-ref">Reference number</label><input id="p-ref" name="reference" maxlength="80" required></div>'
+                . '<div class="field"><label for="p-ref">Reference number</label><input id="p-ref" name="reference" maxlength="80" value="' . esc_attr((string) $o['ref']) . '" required><small class="muted">The order number, or the reference on your receipt</small></div>'
                 . '<div class="field"><label for="p-proof">Receipt or screenshot</label><input id="p-proof" name="proof" type="file" accept="image/*,application/pdf" required></div>'
                 . '</div><p class="form-error" role="alert" hidden></p><div class="form-actions"><button class="btn primary" type="submit">Send proof</button></div></form></details>';
         }

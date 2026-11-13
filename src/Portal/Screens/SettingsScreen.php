@@ -17,7 +17,8 @@ final class SettingsScreen
         'Company details (letterhead and emails)' => ['company_legal_name', 'company_address', 'company_phone', 'company_email', 'company_tin', 'records_bcc'],
         'Yard' => ['yard_address', 'yard_lat', 'yard_lng'],
         'Bookings and billing' => ['hold_hours', 'quote_valid_days', 'km_tolerance_pct', 'driver_km_basis', 'trips_per_rental', 'delivery_truck_type'],
-        'Payments' => ['payment_instructions', 'fuel_price_per_liter'],
+        'Payment accounts (shown on quotations, bills and emails)' => ['pay_bank_name', 'pay_bank_branch', 'pay_bank_account_name', 'pay_bank_account_no', 'pay_gcash_name', 'pay_gcash_no', 'pay_maya_name', 'pay_maya_no', 'pay_note', 'payment_instructions'],
+        'Payments' => ['fuel_price_per_liter'],
         'Fleet' => ['service_interval_km'],
         'Notifications and privacy' => ['notify_email', 'document_retention_days'],
     ];

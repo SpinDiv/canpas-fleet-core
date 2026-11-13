@@ -18,7 +18,7 @@ use Canpas\Fleet\Tenancy\Actor;
  */
 final class Payments
 {
-    public const METHODS = ['bank' => 'Bank transfer', 'gcash' => 'GCash', 'cash' => 'Cash at the office', 'other' => 'Other'];
+    public const METHODS = ['bank' => 'Bank transfer', 'gcash' => 'GCash', 'maya' => 'Maya', 'cash' => 'Cash at the office', 'other' => 'Other'];
 
     public const KINDS = ['deposit' => 'Deposit', 'balance' => 'Final bill payment', 'refund' => 'Refund to customer'];
 
@@ -61,7 +61,7 @@ final class Payments
         }
         $ref = sanitize_text_field(wp_unslash((string) ($in['reference'] ?? '')));
         if (mb_strlen($ref) < 3) {
-            throw new DomainError('invalid_input', 'Enter the transfer or GCash reference number.', ['field' => 'reference']);
+            throw new DomainError('invalid_input', 'Enter the transfer, GCash or Maya reference number.', ['field' => 'reference']);
         }
         if ($proof === null || empty($proof['tmp_name'])) {
             throw new DomainError('file_missing', 'Attach the receipt or screenshot of the transfer.', ['field' => 'proof']);

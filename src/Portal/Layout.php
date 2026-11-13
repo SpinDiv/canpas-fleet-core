@@ -278,6 +278,7 @@ input.qty{width:96px;height:36px;padding:0 10px;border:1px solid var(--line-2);b
 .rate-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 12px}
 .totals .save{color:#15803D;font-weight:600}s.muted,s{text-decoration-thickness:1px}
 .quote-ask small{display:block;margin-top:4px}
+.payinfo{background:#F5F7FA;border:1px solid var(--line);border-radius:8px;padding:12px 16px;margin:0 0 16px}.payinfo-title{margin:0 0 8px;font-weight:600;font-size:13px}.payinfo .dl{margin:0 0 6px}
 .rates{display:flex;flex-wrap:wrap;gap:0 12px}.rates .rate{white-space:nowrap}.list li>.pill{align-self:flex-start;flex:none}
 @media (max-width:820px){
   .shell{align-content:flex-start}.body{min-height:calc(100vh - 56px);min-height:calc(100dvh - 56px)}
