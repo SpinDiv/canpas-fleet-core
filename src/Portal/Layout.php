@@ -268,6 +268,7 @@ input.qty{width:96px;height:36px;padding:0 10px;border:1px solid var(--line-2);b
   .side{display:flex;position:fixed;top:56px;left:0;bottom:0;width:50%;z-index:59;overflow-y:auto;padding:12px 8px 24px;
     transform:translateX(-100%);visibility:hidden;transition:transform .25s ease,visibility 0s linear .25s;box-shadow:4px 0 24px rgba(0,0,0,.25)}
   .nav-open .side{transform:none;visibility:visible;transition:transform .25s ease,visibility 0s}
+  @media (max-width:600px){.side{width:70%}}
   .nav-scrim{display:block;position:fixed;top:56px;left:0;right:0;bottom:0;z-index:58;background:rgba(10,15,28,.45);opacity:0;pointer-events:none;transition:opacity .25s ease}
   .nav-open .nav-scrim{opacity:1;pointer-events:auto}.nav-open body{overflow:hidden}
   .side .nav-item{height:auto;min-height:44px;padding:10px 12px;line-height:1.3}
