@@ -30,6 +30,7 @@ use Canpas\Fleet\Roles\Roles;
 use Canpas\Fleet\Support\Db;
 use Canpas\Fleet\Support\DomainError;
 use Canpas\Fleet\Support\Files;
+use Canpas\Fleet\Support\Mail;
 use Canpas\Fleet\Support\Sequence;
 use Canpas\Fleet\Support\Uuid;
 use Canpas\Fleet\Tenancy\Accounts;
@@ -150,6 +151,7 @@ final class SelfTest
             self::milestone3($sfx, $admin, $dispatcher, $custA, $userB);
             self::milestone4($sfx, $admin, $dispatcher, $custA, $userB, $mk, $users);
             self::milestone5($sfx, $admin, $dispatcher, $custA, $userB);
+            self::milestoneQuotes($sfx, $admin, $dispatcher, $custA, $userB, $mk, $users);
         } catch (\Throwable $e) {
             self::check('Self-test ran to completion', false, get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
         } finally {
@@ -898,6 +900,46 @@ final class SelfTest
         }
     }
 
+    /** Special-rate quotations and branded communications. */
+    private static function milestoneQuotes(string $sfx, Actor $admin, Actor $dispatcher, Actor $custA, Actor $userB, callable $mk, array &$users): void
+    {
+        $savedSettings = get_option(Settings::OPTION, null);
+        $sent = [];
+        $capture = static function ($short, array $atts) use (&$sent) {
+            $sent[] = $atts;
+            return true;
+        };
+        add_filter('pre_wp_mail', $capture, 10, 2);
+        try {
+            $applied = Db::value(Db::prepare('SELECT status FROM ' . Db::t('migrations') . ' WHERE version = %s', '0007_quotations'));
+            self::check('Migration 0007_quotations is applied', $applied === 'applied', (string) $applied);
+            delete_option(Settings::OPTION);
+            self::check('Company detail settings have placeholder defaults',
+                Settings::get('company_legal_name') === 'Canpas Philippines Inc.' && (int) Settings::get('quote_valid_days') === 3 && Settings::get('company_tin') === '000-000-000-000');
+
+            // Branded email with a record.
+            $sent = [];
+            Mail::send("cftest.mail.{$sfx}@canpas-demo.example", 'Selftest branded', ['Hello.'], null, ['company_id' => $custA->companyId, 'kind' => 'selftest', 'title' => 'Test', 'summary' => [['Order', 'TST-1']]]);
+            $logged = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('email_log') . ' WHERE company_id = UNHEX(%s) AND kind = %s AND sent_ok = 1', $custA->companyId, 'selftest'));
+            self::check('Every email is logged with its company', $logged === 1, "{$logged} rows");
+            $html = (string) ($sent[0]['message'] ?? '');
+            $headers = implode("\n", (array) ($sent[0]['headers'] ?? []));
+            self::check('Branded email has the logo header and company footer',
+                str_contains($html, 'logo-white.png') && str_contains($html, '#141D30') && str_contains($html, 'Canpas Philippines Inc.') && str_contains($headers, 'Reply-To: office@canpas.example'),
+                substr($headers, 0, 160));
+            $okBad = Mail::send('nope', 'Selftest bad', ['x'], null, ['company_id' => $custA->companyId, 'kind' => 'selftest_bad']);
+            $badLogged = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('email_log') . ' WHERE company_id = UNHEX(%s) AND kind = %s AND sent_ok = 0', $custA->companyId, 'selftest_bad'));
+            self::check('An invalid recipient is logged as not sent', !$okBad && $badLogged === 1);
+            Settings::save($admin, ['records_bcc' => "records.{$sfx}@canpas-demo.example"]);
+            $sent = [];
+            Mail::send("cftest.mail.{$sfx}@canpas-demo.example", 'Selftest bcc', ['x'], null, ['company_id' => $custA->companyId, 'kind' => 'selftest']);
+            self::check('A records copy is BCC\'d when set', str_contains(implode("\n", (array) ($sent[0]['headers'] ?? [])), "Bcc: records.{$sfx}@canpas-demo.example"));
+        } finally {
+            remove_filter('pre_wp_mail', $capture, 10);
+            $savedSettings === null ? delete_option(Settings::OPTION) : update_option(Settings::OPTION, $savedSettings, false);
+        }
+    }
+
     private static function check(string $name, bool $ok, string $detail = ''): void
     {
         self::$results[] = [$ok, $name, $detail];
@@ -951,6 +993,11 @@ final class SelfTest
             }
             foreach (['trips', 'yard'] as $dir) {
                 @rmdir($private . $dir . '/' . $c);
+            }
+            if (Db::value("SHOW TABLES LIKE '" . Db::t('email_log') . "'")) {
+                Db::exec(Db::prepare('DELETE FROM ' . Db::t('email_log') . ' WHERE company_id = UNHEX(%s)', $c));
+                Db::exec(Db::prepare('DELETE x FROM ' . Db::t('email_log') . $orderOf, $c));
+                Db::exec(Db::prepare('DELETE x FROM ' . Db::t('quote_rounds') . $orderOf, $c));
             }
             Db::exec(Db::prepare('DELETE l FROM ' . Db::t('order_lines') . ' l JOIN ' . Db::t('orders') . ' o ON o.id = l.order_id WHERE o.company_id = UNHEX(%s)', $c));
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('orders') . ' WHERE company_id = UNHEX(%s)', $c));
