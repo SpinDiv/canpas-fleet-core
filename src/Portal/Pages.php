@@ -40,6 +40,7 @@ final class Pages
         'my-orders' => 'Every order with its status, requirements checklist, documents and bills.',
         'my-documents' => 'Upload IDs and licences once and reuse them until they expire.',
         'my-statements' => 'Statements and receipts, and upload proof of payment.',
+        'company-profile' => 'Your company details and registration documents.',
         'company-users' => 'Add and remove the people in your company who can book.',
     ];
 
@@ -49,6 +50,7 @@ final class Pages
         'approvals' => [Screens\CompaniesScreen::class, 'approvals'],
         'companies' => [Screens\CompaniesScreen::class, 'companies'],
         'company-users' => [Screens\CompaniesScreen::class, 'companyUsers'],
+        'company-profile' => [Screens\CompanyProfileScreen::class, 'render'],
         'home' => [Screens\CompaniesScreen::class, 'customerHome'],
         'trucks' => [Screens\CatalogScreen::class, 'trucks'],
         'heavy-equipment' => [Screens\CatalogScreen::class, 'heavy'],
@@ -107,6 +109,7 @@ final class Pages
                 $param('expense') !== '' => \Canpas\Fleet\Domain\Expenses::receipt($actor, $param('expense')),
                 $param('maint') !== '' => \Canpas\Fleet\Domain\Maintenance::receipt($actor, $param('maint')),
                 $param('bill') !== '' => ['bytes' => \Canpas\Fleet\Domain\Billing::pdf($actor, $param('bill')), 'name' => 'bill.pdf'],
+                $param('companydoc') !== '' => \Canpas\Fleet\Domain\CompanyProfile::file($actor, $param('companydoc')),
                 $param('quote') !== '' => ['bytes' => \Canpas\Fleet\Domain\Quotes::pdf($actor, $param('quote'), (int) ($_GET['round'] ?? 0)), 'name' => 'quotation.pdf'],
                 default => \Canpas\Fleet\Domain\Companies::permitFile($actor, $param('company')),
             };

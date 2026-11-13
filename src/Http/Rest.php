@@ -9,6 +9,7 @@ use Canpas\Fleet\Domain\Agreements;
 use Canpas\Fleet\Domain\Billing;
 use Canpas\Fleet\Domain\Catalog;
 use Canpas\Fleet\Domain\Companies;
+use Canpas\Fleet\Domain\CompanyProfile;
 use Canpas\Fleet\Domain\Dispatch;
 use Canpas\Fleet\Domain\Documents;
 use Canpas\Fleet\Domain\Drivers;
@@ -26,6 +27,7 @@ use Canpas\Fleet\Portal\Nav;
 use Canpas\Fleet\Portal\Router;
 use Canpas\Fleet\Portal\Screens\OrdersScreen;
 use Canpas\Fleet\Portal\Screens\QuotesScreen;
+use Canpas\Fleet\Roles\Roles;
 use Canpas\Fleet\Support\DomainError;
 use Canpas\Fleet\Tenancy\Actor;
 
@@ -93,6 +95,41 @@ final class Rest
             Companies::addUser($a, (string) $r->get_param('name'), (string) $r->get_param('email'), (string) $r->get_param('role'));
             return ['message' => 'Added. They will get an email to set their password.'];
         });
+        // Company profile (customer admin) and its review (Canpas admin).
+        self::post('/company-profile/contact', static function (Actor $a, \WP_REST_Request $r): array {
+            CompanyProfile::updateContact($a, self::body($r));
+            return ['message' => 'Contact details saved.'];
+        });
+        self::post('/company-profile/changes', static function (Actor $a, \WP_REST_Request $r): array {
+            CompanyProfile::requestChange($a, self::body($r));
+            return ['message' => 'Sent to Canpas for review. The new details apply once approved.'];
+        });
+        self::post('/company-profile/changes/' . self::ID . '/cancel', static function (Actor $a, \WP_REST_Request $r): array {
+            CompanyProfile::cancelChange($a, (string) $r['id']);
+            return ['message' => 'Change cancelled.'];
+        });
+        self::post('/company-profile/documents', static function (Actor $a, \WP_REST_Request $r): array {
+            $files = $r->get_file_params();
+            $exp = trim((string) $r->get_param('expires_on'));
+            CompanyProfile::uploadDocument($a, (string) $r->get_param('kind'), $exp === '' ? null : $exp, $files['file'] ?? null);
+            return ['message' => 'Uploaded. Canpas will check it.'];
+        });
+        foreach (['admin' => Roles::CUSTOMER_ADMIN, 'user' => Roles::CUSTOMER_USER] as $word => $role) {
+            self::post('/company-profile/people/(?P<uid>\d+)/' . $word, static function (Actor $a, \WP_REST_Request $r) use ($role): array {
+                CompanyProfile::setRole($a, (int) $r['uid'], $role);
+                return ['message' => 'Access updated.'];
+            });
+        }
+        foreach (['approve' => true, 'reject' => false] as $word => $ok) {
+            self::post('/company-documents/' . self::ID . '/' . $word, static function (Actor $a, \WP_REST_Request $r) use ($ok): array {
+                CompanyProfile::reviewDocument($a, (string) $r['id'], $ok, (string) $r->get_param('reason'));
+                return ['message' => $ok ? 'Document approved. The customer has been emailed.' : 'Document not accepted. The customer has been emailed.'];
+            });
+            self::post('/company-changes/' . self::ID . '/' . $word, static function (Actor $a, \WP_REST_Request $r) use ($ok): array {
+                CompanyProfile::reviewChange($a, (string) $r['id'], $ok, (string) $r->get_param('reason'));
+                return ['message' => $ok ? 'Change approved and applied. The customer has been emailed.' : 'Change not approved. The customer has been emailed.'];
+            });
+        }
         self::post('/company-users/(?P<uid>\d+)/remove', static function (Actor $a, \WP_REST_Request $r): array {
             Companies::deactivateUser($a, (int) $r['uid']);
             return ['message' => 'Access removed.'];

@@ -11,6 +11,7 @@ use Canpas\Fleet\Domain\Billing;
 use Canpas\Fleet\Domain\Catalog;
 use Canpas\Fleet\Domain\Companies;
 use Canpas\Fleet\Domain\CompanyProfile;
+use Canpas\Fleet\Portal\Screens\CompanyProfileScreen;
 use Canpas\Fleet\Domain\Dispatch;
 use Canpas\Fleet\Domain\Distance;
 use Canpas\Fleet\Domain\Documents;
@@ -959,12 +960,20 @@ final class SelfTest
             $permit = CompanyProfile::uploadDocument($custA, 'permit', $future, $png());
             $dti = CompanyProfile::uploadDocument($custA, 'dti', $future, $png());
             self::check('Uploaded documents wait for Canpas', (string) Db::value(Db::prepare('SELECT status FROM ' . Db::t('company_documents') . ' WHERE id = UNHEX(%s)', $permit)) === 'pending');
+            $waiting = array_values(array_filter(CompanyProfile::pendingCompanies(), static fn($r) => $r['id'] === $A));
+            self::check('Approvals lists a company whose documents are waiting', ($waiting[0]['documents'] ?? 0) === 2, json_encode($waiting));
+            $banner = CompanyProfileScreen::readinessBanner($A, true, true);
+            self::check('The profile banner names what is missing and links to Company profile', str_contains($banner, 'Business permit') && str_contains($banner, 'DTI certificate') && str_contains($banner, 'company-profile'), strip_tags($banner));
+            self::check('Canpas sees approve buttons on waiting documents; the customer does not',
+                str_contains(CompanyProfileScreen::documentsCard($admin, $A, 'sole_prop', false, true), "company-documents/{$permit}/approve")
+                && !str_contains(CompanyProfileScreen::documentsCard($custA, $A, 'sole_prop', true, false), 'company-documents/'));
             self::expect('Quotations are refused until the documents are approved', 'documents_missing', static fn() => Quotes::request($custA, 'equipment', ['note' => 'x y z']));
             self::expect('A dispatcher cannot approve documents', 'forbidden', static fn() => CompanyProfile::reviewDocument($dispatcher, $permit, true));
             self::expect('Rejecting a document needs a reason', 'reason_required', static fn() => CompanyProfile::reviewDocument($admin, $dti, false, ''));
             CompanyProfile::reviewDocument($admin, $permit, true);
             CompanyProfile::reviewDocument($admin, $dti, true);
             self::check('With an approved permit and DTI a sole proprietor can request quotations', CompanyProfile::quoteReady($A)['ok'] === true, implode(',', CompanyProfile::quoteReady($A)['missing']));
+            self::check('The profile banner disappears once the documents are approved', CompanyProfileScreen::readinessBanner($A, true) === '');
             $permit2 = CompanyProfile::uploadDocument($custA, 'permit', Db::todayManila()->modify('+360 days')->format('Y-m-d'), $png());
             CompanyProfile::reviewDocument($admin, $permit2, true);
             self::check('Approving a new permit replaces the old one', (string) Db::value(Db::prepare('SELECT status FROM ' . Db::t('company_documents') . ' WHERE id = UNHEX(%s)', $permit)) === 'replaced' && CompanyProfile::quoteReady($A)['ok']);

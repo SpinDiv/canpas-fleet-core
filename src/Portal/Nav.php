@@ -71,6 +71,7 @@ final class Nav
         'my-orders' => ['My orders', 'orders', 'My account', 'cf_book', 'M2'],
         'my-documents' => ['Documents', 'file', 'My account', 'cf_upload_documents', 'M3'],
         'my-statements' => ['Statements', 'receipt', 'My account', 'cf_view_statements', 'M5'],
+        'company-profile' => ['Company profile', 'building', 'My account', 'cf_book', 'M1'],
         'company-users' => ['Company users', 'users', 'My account', 'cf_manage_company_users', 'M1'],
         // Everyone
         'account' => ['Account', 'user', 'Account', 'cf_access_portal', 'M1'],
