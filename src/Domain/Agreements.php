@@ -272,8 +272,9 @@ TXT;
     {
         $manila = (new \DateTimeImmutable($signedAt, new \DateTimeZone('UTC')))->setTimezone(new \DateTimeZone('Asia/Manila'));
         $pdf = new Pdf($version['title'] . ' — ' . $o['ref'], 'Canpas · ' . $o['ref'] . ' · Agreement version ' . (int) $version['version']);
-        $pdf->paragraph((string) $version['title'], 17, true, 2);
-        $pdf->paragraph('Order ' . $o['ref'] . ' · Version ' . (int) $version['version'], 9, false, 10);
+        $pdf->letterhead('RENTAL AGREEMENT', 'Order ' . $o['ref'] . ' · Version ' . (int) $version['version'], $manila->format('j F Y'),
+            [(string) Db::value(Db::prepare('SELECT name FROM ' . Db::t('companies') . ' WHERE id = UNHEX(%s)', $o['company_id']))]);
+        $pdf->paragraph((string) $version['title'], 13, true, 6);
         foreach (self::blocks(self::merged($o, $version, $name, $signedAt)) as [$kind, $text]) {
             $kind === 'h' ? $pdf->heading($text, 11.5) : $pdf->paragraph($text, 9.5);
         }

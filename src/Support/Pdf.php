@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Canpas\Fleet\Support;
 
 /**
- * A small A4 PDF writer for signed agreements: headings, wrapped paragraphs and one JPEG image,
+ * A small A4 PDF writer for bills, quotations and signed agreements: letterhead, headings, wrapped paragraphs, rows and JPEG images,
  * with the built-in Helvetica fonts (no font files, no libraries).
  * Text is converted to Windows-1252; the peso sign is written as "PHP".
  */
@@ -109,6 +109,59 @@ final class Pdf
         $this->y -= 4;
     }
 
+    /**
+     * Company letterhead at the top of the current page: logo left, company details right,
+     * then the document title, number and date, and an optional client block ("Prepared for").
+     *
+     * @param list<string> $client lines; the first is printed bold
+     */
+    public function letterhead(string $docTitle, string $number, string $date, array $client = []): void
+    {
+        $s = \Canpas\Fleet\Domain\Settings::all();
+        $top = self::H - self::M + 14;
+        $logo = defined('CANPAS_FLEET_DIR') ? (string) @file_get_contents(CANPAS_FLEET_DIR . 'assets/logo-letterhead.jpg') : '';
+        $logoH = 0.0;
+        if ($logo !== '' && ($info = @getimagesizefromstring($logo))) {
+            $logoW = 140.0;
+            $logoH = $logoW * $info[1] / max(1, $info[0]);
+            $this->imageAt($logo, (int) $info[0], (int) $info[1], self::M, $top - $logoH, $logoW, $logoH);
+        }
+        $lines = [[(string) $s['company_legal_name'], true]];
+        foreach (preg_split('/\R/', (string) $s['company_address']) ?: [] as $l) {
+            $lines[] = [trim($l), false];
+        }
+        $lines[] = [trim((string) $s['company_phone'] . '  ·  ' . (string) $s['company_email'], ' ·'), false];
+        if ((string) $s['company_tin'] !== '') {
+            $lines[] = ['TIN ' . (string) $s['company_tin'], false];
+        }
+        $y = $top - 9;
+        foreach ($lines as [$text, $bold]) {
+            if ($text === '') {
+                continue;
+            }
+            $this->textAt($text, self::W - self::M, $y, $bold ? 9.5 : 8.5, $bold, 'R');
+            $y -= 12;
+        }
+        $this->y = min($top - $logoH, $y + 4) - 10;
+        // Brand bar: navy with an orange edge.
+        $page = count($this->pages) - 1;
+        $this->pages[$page] .= sprintf("0.078 0.114 0.188 rg %.2F %.2F %.2F 2.2 re f 0.761 0.255 0.047 rg %.2F %.2F 60 2.2 re f 0 g\n",
+            self::M, $this->y, self::W - 2 * self::M, self::M, $this->y);
+        $this->y -= 26;
+        $this->textAt($docTitle, self::M, $this->y, 18, true, 'L');
+        $this->textAt($number, self::W - self::M, $this->y + 6, 9.5, true, 'R');
+        $this->textAt($date, self::W - self::M, $this->y - 6, 8.5, false, 'R');
+        $this->y -= 16;
+        if ($client !== []) {
+            $this->space(4);
+            $this->paragraph('PREPARED FOR', 7.5, true, 0);
+            foreach ($client as $i => $line) {
+                $this->paragraph($line, $i === 0 ? 10 : 9, $i === 0, 0);
+            }
+            $this->space(8);
+        }
+    }
+
     public function output(): string
     {
         $objects = [];
@@ -157,6 +210,20 @@ final class Pdf
     }
 
     // ----- internals ---------------------------------------------------------------------------
+
+    private function imageAt(string $jpeg, int $pxW, int $pxH, float $x, float $y, float $w, float $h): void
+    {
+        $this->images[] = ['w' => $pxW, 'h' => $pxH, 'data' => $jpeg];
+        $this->pages[count($this->pages) - 1] .= sprintf("q %.2F 0 0 %.2F %.2F %.2F cm /Im%d Do Q\n", $w, $h, $x, $y, count($this->images));
+    }
+
+    /** One line of text at an absolute position; $x is the left edge ('L') or right edge ('R'). */
+    private function textAt(string $text, float $x, float $y, float $size, bool $bold, string $align): void
+    {
+        $t = $this->encode($text);
+        $left = $align === 'R' ? $x - $this->width($t, $size, $bold) : $x;
+        $this->pages[count($this->pages) - 1] .= sprintf("BT /%s %.1F Tf %.2F %.2F Td (%s) Tj ET\n", $bold ? 'F2' : 'F1', $size, $left, $y, $this->escape($t));
+    }
 
     private function newPage(): void
     {

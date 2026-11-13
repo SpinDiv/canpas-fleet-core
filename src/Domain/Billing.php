@@ -398,10 +398,9 @@ final class Billing
         $company = Db::row(Db::prepare('SELECT name, address, tin FROM ' . Db::t('companies') . ' WHERE id = UNHEX(%s)', $o['company_id'])) ?? [];
         $money = static fn($v): string => 'PHP ' . number_format((float) $v, 2);
         $pdf = new \Canpas\Fleet\Support\Pdf('Bill ' . $inv['ref'], 'Canpas · Bill ' . $inv['ref'] . ' · Order ' . $o['ref'] . ' · This is a billing statement, not an official receipt.');
-        $pdf->paragraph('Canpas — Final bill', 17, true, 2);
-        $pdf->paragraph('Bill ' . $inv['ref'] . ' · Order ' . $o['ref'] . ($inv['issued_at'] ? ' · Issued ' . (new \DateTimeImmutable((string) $inv['issued_at'], new \DateTimeZone('UTC')))->setTimezone(new \DateTimeZone('Asia/Manila'))->format('j F Y') : ' · DRAFT'), 9.5, false, 10);
-        $pdf->paragraph('Billed to', 9, true, 0);
-        $pdf->paragraph(trim(($company['name'] ?? '') . "\n" . ($company['address'] ?? '') . (!empty($company['tin']) ? "\nTIN " . $company['tin'] : '')), 9.5, false, 8);
+        $pdf->letterhead('FINAL BILL', 'Bill ' . $inv['ref'] . ' · Order ' . $o['ref'],
+            $inv['issued_at'] ? 'Issued ' . (new \DateTimeImmutable((string) $inv['issued_at'], new \DateTimeZone('UTC')))->setTimezone(new \DateTimeZone('Asia/Manila'))->format('j F Y') : 'DRAFT',
+            array_values(array_filter([(string) ($company['name'] ?? ''), (string) ($company['address'] ?? ''), !empty($company['tin']) ? 'TIN ' . $company['tin'] : ''])));
         $pdf->paragraph('Rental: ' . (new \DateTimeImmutable((string) $o['start_date']))->format('j M Y') . ' to ' . (new \DateTimeImmutable((string) $o['end_date']))->format('j M Y')
             . ($o['returned_at'] ? ' · returned ' . (new \DateTimeImmutable((string) $o['returned_at'], new \DateTimeZone('UTC')))->setTimezone(new \DateTimeZone('Asia/Manila'))->format('j M Y') : '')
             . ($o['actual_km'] !== null ? ' · ' . number_format((int) $o['actual_km']) . ' km driven (quoted ' . number_format((float) $o['distance_km'], 1) . ')' : ''), 9.5, false, 8);
