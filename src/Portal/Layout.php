@@ -303,7 +303,7 @@ input.qty{width:96px;height:36px;padding:0 10px;border:1px solid var(--line-2);b
   .tabbar a:hover{text-decoration:none;color:var(--ink)}
   .tabbar a[aria-current=page]{color:var(--accent);font-weight:600}
   .has-tabs main{padding-bottom:calc(88px + env(safe-area-inset-bottom))}
-  body:has(.has-tabs) .toast{bottom:calc(72px + env(safe-area-inset-bottom))}
+  .has-tabs ~ .toast{bottom:calc(72px + env(safe-area-inset-bottom))}
   .account-out{margin:16px 0 0}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
