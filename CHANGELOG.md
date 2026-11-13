@@ -2,7 +2,7 @@
 
 ## 0.6.3 — 2026-11-13
 
-- Sign-in and request-account pages on tablets and phones show only the form card (the dark brand panel is hidden below 1025px wide).
+- Sign-in and request-account pages on tablets and phones show only the form card, centred on the screen (the dark brand panel is hidden below 1025px wide).
 
 ## 0.6.2 — 2026-11-13
 
