@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.3 — 2026-11-13
+
+- Sign-in and request-account pages on tablets and phones show only the form card (the dark brand panel is hidden below 1025px wide).
+
 ## 0.6.2 — 2026-11-13
 
 - Phone layout for every portal user: a fixed top bar with the Canpas logo on the left and the profile, log out and a menu (hamburger) button on the right. The menu opens the navigation full-screen and closes on a link, Escape or the button.

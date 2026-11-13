@@ -186,7 +186,8 @@ legend{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:upperc
 .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .field input[type=file]{height:auto;padding:8px}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
-@media (max-width:820px){.auth-brand{padding:28px 24px;gap:20px}.auth-pitch ul,.auth-foot{display:none}.auth-headline{font-size:20px}.auth-card{padding:24px}.two{grid-template-columns:1fr}.auth-main{padding:24px 16px}}
+@media (max-width:1024px){.auth-brand{display:none}.auth-main{min-height:100vh;padding:32px 16px}}
+@media (max-width:820px){.auth-card{padding:24px}.two{grid-template-columns:1fr}.auth-main{align-items:flex-start;padding:24px 16px}}
 CSS;
     }
 }
