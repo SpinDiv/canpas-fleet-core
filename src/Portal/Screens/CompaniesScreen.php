@@ -86,6 +86,7 @@ final class CompaniesScreen
             . '<dt>Contact</dt><dd>' . Ui::e($c['contact_name']) . ' · ' . Ui::e($c['contact_phone']) . ' · ' . Ui::e($c['contact_email']) . '</dd>'
             . '<dt>Requested</dt><dd>' . Ui::e(Ui::when($c['created_at'])) . '</dd>'
             . '<dt>Approved</dt><dd>' . Ui::e(Ui::when($c['approved_at'])) . '</dd>'
+            . '<dt>Special rates</dt><dd>' . (Companies::specialRates($id) ? Ui::pill('active', 'Can request quotations') : '<span class="muted">Normal rates only</span>') . '</dd>'
             . ($c['has_permit'] ? '<dt>Business permit</dt><dd><a href="' . esc_url(add_query_arg('company', $id, Router::url('file'))) . '" target="_blank" rel="noopener">Open document</a> <span class="muted small">(viewing is logged)</span></dd>' : '')
             . '</dl>';
 
@@ -98,6 +99,12 @@ final class CompaniesScreen
                 'suspended' => Ui::action('Reactivate', "companies/{$id}/reactivate", 'primary', "Reactivate {$c['name']}?"),
                 default => '',
             };
+        }
+
+        if ($actor->can('cf_manage_rates') && $c['status'] === 'approved') {
+            $actions .= Companies::specialRates($id)
+                ? Ui::action('Turn off special rates', "companies/{$id}/special-rates-off", '', "Stop {$c['name']} from requesting special-rate quotations? Quotations already sent are not affected.")
+                : Ui::action('Allow special rates', "companies/{$id}/special-rates-on", '', "Let {$c['name']} request special-rate quotations?");
         }
 
         $rows = [];

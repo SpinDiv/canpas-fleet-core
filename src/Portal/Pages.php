@@ -107,6 +107,7 @@ final class Pages
                 $param('expense') !== '' => \Canpas\Fleet\Domain\Expenses::receipt($actor, $param('expense')),
                 $param('maint') !== '' => \Canpas\Fleet\Domain\Maintenance::receipt($actor, $param('maint')),
                 $param('bill') !== '' => ['bytes' => \Canpas\Fleet\Domain\Billing::pdf($actor, $param('bill')), 'name' => 'bill.pdf'],
+                $param('quote') !== '' => ['bytes' => \Canpas\Fleet\Domain\Quotes::pdf($actor, $param('quote'), (int) ($_GET['round'] ?? 0)), 'name' => 'quotation.pdf'],
                 default => \Canpas\Fleet\Domain\Companies::permitFile($actor, $param('company')),
             };
         } catch (\Canpas\Fleet\Support\DomainError $e) {

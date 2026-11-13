@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Canpas\Fleet\Portal\Screens;
 
 use Canpas\Fleet\Domain\Catalog;
+use Canpas\Fleet\Domain\Companies;
 use Canpas\Fleet\Domain\Orders;
 use Canpas\Fleet\Domain\Pricing;
 use Canpas\Fleet\Domain\Stock;
@@ -50,7 +51,8 @@ final class OrdersScreen
             . '</div>'
             . '<div class="quote-box" hidden aria-live="polite"></div>'
             . '<p class="form-error" role="alert" hidden></p>'
-            . '<div class="form-actions"><button type="button" class="btn" data-quote="quote/truck">Get price</button><button type="submit" class="btn primary" data-needs-quote disabled>Book and hold</button></div>'
+            . self::quoteRequestFields($actor, 'truck')
+            . '<div class="form-actions"><button type="button" class="btn" data-quote="quote/truck">Get price</button><button type="submit" class="btn primary" data-needs-quote disabled>Book and hold</button>' . self::quoteRequestButton($actor, 'truck') . '</div>'
             . '</form>';
         $body = '<div class="split">' . Ui::card('Your booking', $form)
             . Ui::card('Rates', Ui::table(['Truck', '>Starting fee', '>Per km', 'Canpas driver'], $rates)
@@ -100,7 +102,8 @@ final class OrdersScreen
             . '<div class="form-grid"><div class="field wide"><label for="f-notes">Notes for Canpas <span class="opt">(optional)</span></label><textarea id="f-notes" name="notes" rows="2" maxlength="500"></textarea></div></div>'
             . '<div class="quote-box" hidden aria-live="polite"></div>'
             . '<p class="form-error" role="alert" hidden></p>'
-            . '<div class="form-actions"><button type="button" class="btn" data-quote="quote/equipment">Get price</button><button type="submit" class="btn primary" data-needs-quote disabled>Place order and hold</button></div>'
+            . self::quoteRequestFields($actor, 'equipment')
+            . '<div class="form-actions"><button type="button" class="btn" data-quote="quote/equipment">Get price</button><button type="submit" class="btn primary" data-needs-quote disabled>Place order and hold</button>' . self::quoteRequestButton($actor, 'equipment') . '</div>'
             . '</form>';
         $note = '<p class="muted small" style="margin-top:12px">Each piece is charged the cheapest mix of months (30 days), weeks and days for your rental, never less than its minimum. Delivery is priced as a truck trip with a Canpas driver.</p>';
         Layout::page($actor, 'rent', 'Rent equipment', Ui::card('', $form . $note), 'My account');
@@ -134,8 +137,8 @@ final class OrdersScreen
         $status = isset(Orders::STATUS_LABELS[$status]) ? $status : '';
         $counts = Orders::counts();
         $tabs = ['' => 'All (' . array_sum($counts) . ')'];
-        foreach (['submitted', 'requested', 'needs_fix', 'confirmed', 'dispatched', 'on_site', 'returning', 'returned', 'closed', 'declined', 'expired', 'cancelled'] as $s) {
-            $label = ['requested' => 'On hold with customer', 'needs_fix' => 'Sent back to customer'][$s] ?? Orders::STATUS_LABELS[$s];
+        foreach (['quote_requested', 'quoted', 'submitted', 'requested', 'needs_fix', 'confirmed', 'dispatched', 'on_site', 'returning', 'returned', 'closed', 'declined', 'expired', 'cancelled', 'quote_declined', 'quote_expired'] as $s) {
+            $label = ['requested' => 'On hold with customer', 'needs_fix' => 'Sent back to customer', 'quote_requested' => 'Quotations to price', 'quoted' => 'Quotations sent'][$s] ?? Orders::STATUS_LABELS[$s];
             $tabs[$s] = $label . ' (' . ($counts[$s] ?? 0) . ')';
         }
         $rows = [];
@@ -194,10 +197,18 @@ final class OrdersScreen
             $actions = Ui::action('Cancel order', "orders/{$o['id']}/cancel", 'danger', "Cancel order {$o['ref']}? The trucks and items are released.");
         }
         $showReq = !in_array($o['status'], ['cancelled', 'expired'], true) || !empty($o['gov_id_doc']) || !empty($o['signed_at']);
-        $body = '<div class="split">' . Ui::card('Order', $dl) . Ui::card('Price', self::breakdown($draft)) . '</div>'
-            . BillingScreen::card($actor, $o)
-            . OpsScreen::card($actor, $o)
-            . ($showReq ? RequirementsScreen::card($actor, $o) : '');
+        if (in_array($o['status'], Orders::QUOTE_STATUSES, true)) {
+            // A quotation: the normal price beside the quotation card; no requirements yet.
+            $body = '<div class="split">' . Ui::card('Order', $dl) . Ui::card('Normal price', self::breakdown($draft)) . '</div>'
+                . QuotesScreen::card($actor, $o) . QuotesScreen::emailsCard($o);
+        } else {
+            $body = '<div class="split">' . Ui::card('Order', $dl) . Ui::card((int) $o['quote_round'] > 0 ? 'Price (special rates)' : 'Price', self::breakdown($draft)) . '</div>'
+                . QuotesScreen::card($actor, $o)
+                . BillingScreen::card($actor, $o)
+                . OpsScreen::card($actor, $o)
+                . ($showReq ? RequirementsScreen::card($actor, $o) : '')
+                . QuotesScreen::emailsCard($o);
+        }
         Layout::page($actor, $page, $o['ref'], $body, $page === 'orders' ? 'Operations / Orders' : 'My account / My orders', $actions);
     }
 
@@ -290,10 +301,32 @@ final class OrdersScreen
         $tone = match ($status) {
             'requested', 'needs_fix' => 'pending',
             'confirmed', 'dispatched', 'on_site', 'returned', 'closed' => 'approved',
-            'cancelled', 'declined', 'expired' => 'retired',
+            'cancelled', 'declined', 'expired', 'quote_declined', 'quote_expired' => 'retired',
+            'quote_requested' => 'pending',
             default => 'info',
         };
         return Ui::pill($tone, Orders::STATUS_LABELS[$status] ?? $status);
+    }
+
+    private static function eligible(Actor $actor): bool
+    {
+        return $actor->companyId !== null && Companies::specialRates($actor->companyId);
+    }
+
+    /** For companies allowed special rates: the note that goes with a quotation request. */
+    private static function quoteRequestFields(Actor $actor, string $kind): string
+    {
+        if (!self::eligible($actor)) {
+            return '';
+        }
+        return '<div class="form-grid"><div class="field wide quote-ask"><label for="f-qask-' . $kind . '">Want a special rate? <span class="opt">(for a quotation request)</span></label>'
+            . '<textarea id="f-qask-' . $kind . '" name="note" rows="2" maxlength="1000" placeholder="e.g. Regular project, 3 months — hoping for ₱120 per frame per month"></textarea>'
+            . '<small class="muted">Canpas replies with a quotation you can accept, or ask to improve. Nothing is held until Canpas sends the price.</small></div></div>';
+    }
+
+    private static function quoteRequestButton(Actor $actor, string $kind): string
+    {
+        return self::eligible($actor) ? '<button type="submit" class="btn" data-submit-to="quote-requests/' . $kind . '">Request a quotation</button>' : '';
     }
 
     private static function dateFields(): string

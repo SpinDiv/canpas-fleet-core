@@ -16,6 +16,7 @@ use Canpas\Fleet\Domain\Expenses;
 use Canpas\Fleet\Domain\Maintenance;
 use Canpas\Fleet\Domain\Orders;
 use Canpas\Fleet\Domain\Payments;
+use Canpas\Fleet\Domain\Quotes;
 use Canpas\Fleet\Domain\Requirements;
 use Canpas\Fleet\Domain\Trips;
 use Canpas\Fleet\Domain\Yard;
@@ -24,6 +25,7 @@ use Canpas\Fleet\Domain\Stock;
 use Canpas\Fleet\Portal\Nav;
 use Canpas\Fleet\Portal\Router;
 use Canpas\Fleet\Portal\Screens\OrdersScreen;
+use Canpas\Fleet\Portal\Screens\QuotesScreen;
 use Canpas\Fleet\Support\DomainError;
 use Canpas\Fleet\Tenancy\Actor;
 
@@ -119,6 +121,52 @@ final class Rest
                 return ['id' => $id, 'message' => 'Booked and held for you. Complete the requirements before the hold ends.', 'redirect' => add_query_arg('id', $id, Router::url('my-orders'))];
             });
         }
+        // Special-rate quotations.
+        foreach (['truck', 'equipment'] as $kind) {
+            self::post('/quote-requests/' . $kind, static function (Actor $a, \WP_REST_Request $r) use ($kind): array {
+                $id = Quotes::request($a, $kind, self::body($r));
+                return ['id' => $id, 'message' => 'Quotation request sent. Canpas will email you the special price.', 'redirect' => add_query_arg('id', $id, Router::url('my-orders'))];
+            });
+        }
+        $pct = static function (array $b): ?float {
+            $v = trim((string) ($b['pct_off'] ?? ''));
+            if ($v === '') {
+                return null;
+            }
+            if (!preg_match('/^\d+(\.\d{1,2})?$/', $v)) {
+                throw new DomainError('invalid_input', 'The discount must be a number like 10 or 12.5.', ['field' => 'pct_off']);
+            }
+            return (float) $v;
+        };
+        self::post('/orders/' . self::ID . '/quote-preview', static function (Actor $a, \WP_REST_Request $r) use ($pct): array {
+            $b = self::body($r);
+            $c = Quotes::preview($a, (string) $r['id'], (array) ($b['rate'] ?? []), $pct($b));
+            return ['html' => QuotesScreen::comparison($c['lines'], $c['normal_total'], $c['total'], $c['deposit'])];
+        });
+        self::post('/orders/' . self::ID . '/quote-offer', static function (Actor $a, \WP_REST_Request $r) use ($pct): array {
+            $b = self::body($r);
+            Quotes::offer($a, (string) $r['id'], (array) ($b['rate'] ?? []), (string) ($b['note'] ?? ''), $pct($b));
+            return ['message' => 'Quotation sent. The customer admin has been emailed.'];
+        });
+        self::post('/orders/' . self::ID . '/quote-accept', static function (Actor $a, \WP_REST_Request $r): array {
+            Quotes::accept($a, (string) $r['id']);
+            return ['message' => 'Accepted. Your order is held at the special rates; complete the requirements before the hold ends.'];
+        });
+        self::post('/orders/' . self::ID . '/quote-counter', static function (Actor $a, \WP_REST_Request $r): array {
+            Quotes::counter($a, (string) $r['id'], (string) $r->get_param('reason'));
+            return ['message' => 'Sent to Canpas. You will get an email with the new price.'];
+        });
+        self::post('/orders/' . self::ID . '/quote-decline', static function (Actor $a, \WP_REST_Request $r): array {
+            Quotes::decline($a, (string) $r['id'], (string) $r->get_param('reason'));
+            return ['message' => 'Quotation declined.'];
+        });
+        foreach (['on' => true, 'off' => false] as $word => $on) {
+            self::post('/companies/' . self::ID . '/special-rates-' . $word, static function (Actor $a, \WP_REST_Request $r) use ($on): array {
+                Companies::setSpecialRates($a, (string) $r['id'], $on);
+                return ['message' => $on ? 'This company can now request special-rate quotations.' : 'Special-rate quotations turned off for this company.'];
+            });
+        }
+
         self::post('/orders/' . self::ID . '/cancel', static function (Actor $a, \WP_REST_Request $r): array {
             Orders::cancel($a, (string) $r['id'], (string) $r->get_param('reason'));
             return ['message' => 'Order cancelled.'];

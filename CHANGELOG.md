@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 — 2026-11-13
+
+- **Special-rate quotations.** The Canpas admin can allow a company (Companies → the company → Allow special rates) to request quotations. Its people see **Request a quotation** beside Book on the booking pages, with a note. The admin prices the request per line (each rate, or a % off all lines), previews the special price and sends it; the items are then held for 3 days (Settings), never past the day before the rental starts. Only the customer's company admin can accept, decline or ask for a better price. On accept the special rates become the order's rates, so the deposit, late days and extra km on the final bill use them. If the hold ends before the requirements are done, the quotation opens again at the same price while the items are free (both sides emailed); otherwise it expires. Every round is kept in the order history and the audit log.
+- **Print-ready quotation PDF** with the Canpas letterhead, normal and special rates per line, total, saving, deposit, validity and terms.
+- **Branded emails** for every client message: navy header with the logo, summary box, company footer, replies to the office email, optional records copy (BCC). Every email is recorded and listed on the order ("Emails sent").
+- **Letterhead** on the final bill and signed rental agreement PDFs.
+- New Settings: company details (placeholders until filled in), records copy address, quotation validity.
+
 ## 0.6.4 — 2026-11-13
 
 - Yard checkers and drivers get an app-style tab bar fixed to the bottom of the screen on phones and tablets (Loadings · Returns · Account, or Today · Expenses · Account) instead of the slide-out menu. Other roles keep the menu.
