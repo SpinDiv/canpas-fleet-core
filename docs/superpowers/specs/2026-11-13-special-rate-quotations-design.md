@@ -60,7 +60,11 @@ clients flexibility openly: a quotation they can see, negotiate, print and accep
    rates with a fresh validity (rule 4), **only if every line is still free** for its dates and the
    validity window has not passed; otherwise it expires as today. Anything already uploaded (ID,
    licence, deposit proof, signature) stays on the order, so accepting again continues where they left
-   off. Recorded as a round of kind `reoffer` by the system. Ordinary bookings expire exactly as now.
+   off. Recorded as a round of kind `reoffer` by the system and in the audit log. **Both sides are
+   emailed** (Ramon: "they need to be notified as our record"): the customer company admin(s) and the
+   Canpas notify address get "Your hold on ORD-… ended; the special quotation is open again until …"
+   — or, if it could not be re-offered, "… has expired because the items are no longer free".
+   Ordinary bookings expire exactly as now.
 6. **Canpas admin can also decline** a request (reason required).
 7. **Deposit** = each line's own deposit rule applied to its special amount (same rule as booking today).
 8. **What the customer sees:** each line shows the normal amount crossed out with the special amount
@@ -68,7 +72,9 @@ clients flexibility openly: a quotation they can see, negotiate, print and accep
 9. **History:** every round (who, when, the rates offered, totals, note) is kept and shown on the order
    and written to the audit log. Accept/decline/ask-again are audited too.
 10. **Notifications:** email to the Canpas notify address when a request or "ask for a better price"
-    arrives; email to the customer company admin(s) when a quotation is sent.
+    arrives; email to the customer company admin(s) when a quotation is sent; email to both sides when
+    an accepted quotation is re-offered or expires (rule 5a). Every email sent is also listed in the
+    order's quotation history (what was sent, to whom, when) so Canpas keeps a record.
 11. **PDF:** "Download quotation (PDF)" for the customer and Canpas on any sent round: Canpas logo,
     quotation number (the order ref + round, e.g. ORD-2611-0007 / Q2), company, dates, site, each line
     with normal and special rates and amounts, total, saving, deposit, valid until, admin's note, and
