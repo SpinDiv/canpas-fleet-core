@@ -247,7 +247,7 @@ input.qty{width:96px;height:36px;padding:0 10px;border:1px solid var(--line-2);b
 @media (max-width:820px){
   .mbar{display:flex;flex:1 1 100%;position:sticky;top:0;z-index:60;height:56px;align-items:center;gap:4px;padding:0 4px 0 16px;background:var(--navy);color:#fff}
   .mbar-logo{display:flex;align-items:center}.mbar-logo img{height:24px;width:auto}
-  .mbar .avatar{width:32px;height:32px;font-size:12px;margin-right:4px}
+  .mbar .avatar{width:32px;height:32px;font-size:12px;margin-right:4px;color:var(--navy)}.mwho .avatar{color:var(--navy)}
   .icon-btn{width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:0;background:transparent;color:#fff;border-radius:8px;cursor:pointer}
   .icon-btn:hover,.icon-btn[aria-expanded=true]{background:rgba(255,255,255,.10)}
   .side{display:none;position:fixed;top:56px;left:0;right:0;bottom:0;z-index:59;overflow-y:auto;padding:12px 12px 24px}
