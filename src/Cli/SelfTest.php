@@ -19,6 +19,7 @@ use Canpas\Fleet\Domain\Maintenance;
 use Canpas\Fleet\Domain\Orders;
 use Canpas\Fleet\Domain\Payments;
 use Canpas\Fleet\Domain\Pricing;
+use Canpas\Fleet\Domain\Quotes;
 use Canpas\Fleet\Domain\Reports;
 use Canpas\Fleet\Domain\Requirements;
 use Canpas\Fleet\Domain\Settings;
@@ -937,7 +938,98 @@ final class SelfTest
             $sent = [];
             Mail::send("cftest.mail.{$sfx}@canpas-demo.example", 'Selftest bcc', ['x'], null, ['company_id' => $custA->companyId, 'kind' => 'selftest']);
             self::check('A records copy is BCC\'d when set', str_contains(implode("\n", (array) ($sent[0]['headers'] ?? [])), "Bcc: records.{$sfx}@canpas-demo.example"));
+
+            // ---- Special-rate quotations ----
+            Orders::$refPrefix = 'TST';
+            $day = static fn(int $n): string => Db::todayManila()->modify("+{$n} days")->format('Y-m-d');
+            $item = ['unit' => 'pc', 'rate_day' => 8, 'rate_week' => 45, 'rate_month' => 150, 'min_days' => 1, 'deposit_mode' => 'percent', 'deposit_value' => 30, 'replacement_cost' => 2500, 'damage_fee' => 600, 'active' => 1];
+            $frames = Catalog::saveItem($admin, ['name' => "Selftest Q frames {$sfx}", 'category' => 'scaffolding'] + $item);
+            Stock::adjust($admin, $frames, 100, 'opening');
+            Settings::save($admin, ['yard_lat' => '14.329400', 'yard_lng' => '120.936700', 'hold_hours' => 24, 'notify_email' => "notify.{$sfx}@canpas-demo.example", 'records_bcc' => '', 'quote_valid_days' => 3]);
+            $qUser = $mk('quser', Roles::CUSTOMER_USER, $custA->companyId);
+            $eq = static fn(int $start, int $days, int $qty, string $note = 'Regular client, special rate please') => ['start_date' => $day($start), 'days' => $days, 'qty' => [$frames => $qty], 'fulfilment' => 'pickup', 'note' => $note];
+            $free = static fn(int $start, int $days): int => Orders::itemFree($frames, $day($start), $day($start + $days - 1));
+            $lineOf = static fn(string $o): string => (string) Db::value(Db::prepare('SELECT HEX(id) FROM ' . Db::t('order_lines') . ' WHERE order_id = UNHEX(%s) AND line_type = %s', $o, 'item'));
+
+            self::expect('A company not ticked for special rates cannot request a quotation', 'not_eligible', static fn() => Quotes::request($userB, 'equipment', $eq(10, 40, 60)));
+            self::expect('Only the Canpas admin can allow special rates', 'forbidden', static fn() => Companies::setSpecialRates($dispatcher, (string) $custA->companyId, true));
+            Companies::setSpecialRates($admin, (string) $custA->companyId, true);
+            $q1 = Quotes::request($qUser, 'equipment', $eq(10, 40, 60));
+            self::check('A ticked company\'s user can request a quotation; nothing is held yet', Orders::row($q1)['status'] === 'quote_requested' && $free(10, 40) === 100, (string) $free(10, 40));
+            self::expect('A quotation request needs a note', 'invalid_input', static fn() => Quotes::request($qUser, 'equipment', $eq(10, 40, 60, '')));
+            $l1 = strtolower($lineOf($q1));
+            self::expect('A dispatcher cannot price a quotation', 'forbidden', static fn() => Quotes::offer($dispatcher, $q1, [], 'x', 10));
+            self::expect('A special rate above the normal rate is refused', 'rate_too_high', static fn() => Quotes::offer($admin, $q1, [$l1 => ['rate_month' => '200']], 'x'));
+            self::expect('A rate written as text is refused', 'invalid_input', static fn() => Quotes::offer($admin, $q1, [$l1 => ['rate_month' => '1,200']], 'x'));
+            $pv = Quotes::preview($admin, $q1, [], 10);
+            $special = ['rate_day' => 7.2, 'rate_week' => 40.5, 'rate_month' => 135.0, 'min_days' => 1];
+            self::check('10% off fills every rate at 90% of normal and re-prices the line',
+                (float) $pv['lines'][0]['special']['rate_month'] === 135.0 && (float) $pv['lines'][0]['special']['rate_week'] === 40.5 && (float) $pv['total'] === Pricing::equipment($special, 60, 40)['amount'],
+                json_encode($pv['lines'][0]['special']) . ' total ' . $pv['total']);
+            $sent = [];
+            Quotes::offer($admin, $q1, [], 'Special rate for a regular client', 10);
+            $o1 = Orders::row($q1);
+            self::check('Sending a quotation holds the stock until it is valid', $o1['status'] === 'quoted' && (int) $o1['quote_round'] === 1 && $free(10, 40) === 40 && $o1['quote_valid_until'] > Db::now(), $free(10, 40) . ' free');
+            self::expect('Another booking cannot take stock held by a sent quotation', 'not_available', static fn() => Orders::bookEquipment($userB, ['start_date' => $day(10), 'days' => 40, 'qty' => [$frames => 41], 'fulfilment' => 'pickup']));
+            self::expect('A customer user cannot accept a quotation', 'forbidden', static fn() => Quotes::accept($qUser, $q1));
+            self::expect('Another company cannot accept the quotation', 'not_found', static fn() => Quotes::accept($userB, $q1));
+            Quotes::counter($custA, $q1, 'Can you do 15%?');
+            self::check('Asking for a better price releases the hold and goes back to Canpas', Orders::row($q1)['status'] === 'quote_requested' && $free(10, 40) === 100);
+            Quotes::offer($admin, $q1, [], 'Best we can do', 15);
+            Quotes::accept($custA, $q1);
+            $o1 = Orders::row($q1);
+            $line = Db::row(Db::prepare('SELECT amount, deposit, rates_json FROM ' . Db::t('order_lines') . ' WHERE id = UNHEX(%s)', $l1));
+            $r = (array) json_decode((string) $line['rates_json'], true);
+            $amt = Pricing::equipment(['rate_day' => 6.8, 'rate_week' => 38.25, 'rate_month' => 127.5, 'min_days' => 1], 60, 40)['amount'];
+            self::check('Accepting writes the special rates onto the order; total and deposit follow them',
+                $o1['status'] === 'requested' && (float) $r['rate_month'] === 127.5 && (float) $line['amount'] === $amt && (float) $o1['total'] === $amt && (float) $o1['deposit_amount'] === round($amt * 0.3, 2) && (float) ($r['normal_rates']['rate_month'] ?? 0) === 150.0,
+                $o1['status'] . ' ' . $o1['total'] . ' vs ' . $amt);
+            $rounds = Quotes::rounds($custA, $q1);
+            $audits = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('audit_log') . ' WHERE object_id = UNHEX(%s) AND action LIKE %s', $q1, 'quote.%'));
+            self::check('Every round is kept in the history and the audit log', count($rounds) === 5 && $audits >= 5, count($rounds) . ' rounds, ' . $audits . ' audits');
+            $mails = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('email_log') . ' WHERE order_id = UNHEX(%s)', $q1));
+            $toAdmin = array_filter($sent, static fn($m) => str_contains((string) ($m['to'] ?? ''), 'cftest.custa.'));
+            self::check('Quotation emails go to the customer admin and Canpas and are logged on the order', $mails >= 4 && $toAdmin !== [], "{$mails} logged");
+            // Late return is charged at the special rates.
+            Db::update('orders', ['status' => 'returned', 'start_date' => $day(-41), 'end_date' => $day(-2), 'returned_at' => Db::now()], ['id' => $q1], ['id']);
+            $late = array_values(array_filter(Billing::systemLines(Orders::row($q1)), static fn($l) => $l['kind'] === 'late'));
+            $lateExpected = round(Pricing::equipment(['rate_day' => 6.8, 'rate_week' => 38.25, 'rate_month' => 127.5, 'min_days' => 1], 60, 42)['amount'] - $amt, 2);
+            self::check('Late days on the final bill use the special rates', isset($late[0]) && (float) $late[0]['amount'] === $lateExpected, ($late[0]['amount'] ?? 'none') . ' vs ' . $lateExpected);
+
+            // Validity and timing.
+            $expect = (new \DateTimeImmutable(Db::todayManila()->format('Y-m-d') . ' 23:59:59', new \DateTimeZone('Asia/Manila')))->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+            self::check('Validity is capped at the end of the day before the rental starts', substr(Quotes::validUntil($day(1)), 0, 19) === $expect, Quotes::validUntil($day(1)));
+            $qToday = Quotes::request($qUser, 'equipment', $eq(0, 3, 5));
+            self::expect('A quotation cannot be sent once the day before the start has passed', 'quote_expired', static fn() => Quotes::offer($admin, $qToday, [], 'x', 5));
+            self::expect('Canpas must give a reason to decline a request', 'reason_required', static fn() => Quotes::decline($admin, $qToday, ''));
+            Quotes::decline($admin, $qToday, 'Not available at special rates');
+            self::check('Canpas can decline a request', Orders::row($qToday)['status'] === 'quote_declined');
+
+            // Expiry of a sent quotation.
+            $q3 = Quotes::request($qUser, 'equipment', $eq(100, 5, 20));
+            Quotes::offer($admin, $q3, [], 'x', 5);
+            Db::update('orders', ['quote_valid_until' => '2000-01-01 00:00:00'], ['id' => $q3], ['id']);
+            Quotes::expire();
+            self::check('A quotation past its validity expires and frees the stock', Orders::row($q3)['status'] === 'quote_expired' && $free(100, 5) === 100);
+
+            // Accepted, but the hold ran out.
+            $q2 = Quotes::request($qUser, 'equipment', $eq(60, 5, 30));
+            Quotes::offer($admin, $q2, [], 'x', 10);
+            Quotes::accept($custA, $q2);
+            Db::update('orders', ['hold_expires_at' => '2000-01-01 00:00:00'], ['id' => $q2], ['id']);
+            $sent = [];
+            Orders::expireHolds();
+            $o2 = Orders::row($q2);
+            $reMails = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('email_log') . ' WHERE order_id = UNHEX(%s) AND kind = %s', $q2, 'quote_reoffer'));
+            self::check('An accepted quotation whose hold ends is offered again while the stock is free (both sides emailed)',
+                $o2['status'] === 'quoted' && $o2['quote_valid_until'] > Db::now() && $free(60, 5) === 70 && $reMails >= 2, $o2['status'] . ", {$reMails} emails");
+            Quotes::accept($custA, $q2);
+            Db::update('orders', ['hold_expires_at' => '2000-01-01 00:00:00'], ['id' => $q2], ['id']);
+            Orders::bookEquipment($userB, ['start_date' => $day(60), 'days' => 5, 'qty' => [$frames => 100], 'fulfilment' => 'pickup']);
+            Orders::expireHolds();
+            self::check('…and expires when the stock has gone', Orders::row($q2)['status'] === 'quote_expired');
         } finally {
+            Orders::$refPrefix = 'ORD';
             remove_filter('pre_wp_mail', $capture, 10);
             $savedSettings === null ? delete_option(Settings::OPTION) : update_option(Settings::OPTION, $savedSettings, false);
         }
