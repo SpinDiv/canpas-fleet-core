@@ -38,7 +38,7 @@ final class CompanyProfileScreen
             $dl .= '<div class="callout info"><b>Waiting for Canpas review</b> (sent ' . Ui::e(Ui::when($pending['requested_at'])) . '):<br>' . self::changeLines($pending['changes'])
                 . ($isAdmin ? '<div class="row-actions" style="margin-top:8px">' . Ui::action('Cancel this change', "company-profile/changes/{$pending['id']}/cancel", '', 'Cancel the change waiting for Canpas?') . '</div>' : '') . '</div>';
         } elseif ($isAdmin) {
-            $dl .= '<details class="upload"><summary>Request a change</summary>'
+            $dl .= '<details class="upload"' . ((string) $c['structure'] === '' ? ' open' : '') . '><summary>Request a change</summary>'
                 . '<p class="muted small">Canpas checks changes to these details before they are used on quotations, bills and agreements. Fill in only what changes.</p>'
                 . '<form class="form" data-endpoint="company-profile/changes" novalidate><div class="form-grid">'
                 . '<div class="field"><label for="ch-name">New company name</label><input id="ch-name" name="name" maxlength="191" placeholder="' . esc_attr($c['name']) . '"></div>'
@@ -79,8 +79,8 @@ final class CompanyProfileScreen
         if ($r['ok']) {
             return '';
         }
-        return '<div class="callout warn"><b>Complete your company profile to request special rates.</b> Canpas needs: '
-            . Ui::e(implode(', ', $r['missing'])) . ' — approved and not expired.'
+        return '<div class="callout warn"><b>Complete your company profile to request special rates.</b> Still needed: '
+            . Ui::e(self::andList($r['missing'])) . '. Documents must be checked by Canpas and not expired.'
             . ($withLink ? ' <a href="' . esc_url(Router::url('company-profile')) . '">Open Company profile</a>' : '') . '</div>';
     }
 
@@ -115,7 +115,7 @@ final class CompanyProfileScreen
         } elseif ($structure !== '') {
             $need['sec'] = CompanyProfile::KINDS['sec'];
         }
-        $html = '<p class="muted small">' . ($structure === '' ? 'Set your business structure first (Request a change). ' : '')
+        $html = '<p class="muted small">' . ($structure === '' ? ($staff ? 'Business structure not set yet. ' : 'Set your business structure first (Request a change above). ') : '')
             . 'Needed: ' . Ui::e(implode(' and ', $need)) . '. Canpas checks each one. Opening a document is recorded.</p>'
             . Ui::table(['Document', 'Expires', 'Status', ''], $rows, 'No documents yet.');
         if ($canUpload) {
@@ -153,14 +153,15 @@ final class CompanyProfileScreen
     private static function adminsCard(Actor $actor): string
     {
         $rows = [];
-        foreach (Companies::users($actor) as $u) {
-            if ($u['status'] !== 'active') {
-                continue;
-            }
+        $people = array_values(array_filter(Companies::users($actor), static fn($u) => $u['status'] === 'active'));
+        $admins = count(array_filter($people, static fn($u) => $u['role'] === Roles::CUSTOMER_ADMIN));
+        foreach ($people as $u) {
             $isAdmin = $u['role'] === Roles::CUSTOMER_ADMIN;
-            $act = $isAdmin
+            $act = $isAdmin && $admins < 2
+                ? '<span class="muted small">Only admin</span>'
+                : ($isAdmin
                 ? Ui::action('Make user', "company-profile/people/{$u['user_id']}/user", '', "Make {$u['name']} a regular user? They can still book but not manage the company.")
-                : Ui::action('Make admin', "company-profile/people/{$u['user_id']}/admin", '', "Make {$u['name']} a company admin? They can change the company profile and people.");
+                : Ui::action('Make admin', "company-profile/people/{$u['user_id']}/admin", '', "Make {$u['name']} a company admin? They can change the company profile and people."));
             $rows[] = [Ui::e($u['name']), Ui::e($u['role_label']), '<div class="row-actions">' . $act . '</div>'];
         }
         return Ui::card('Company admins', '<p class="muted small">Admins can change the company profile, documents and people. There must always be at least one.</p>' . Ui::table(['Name', 'Access', ''], $rows));
@@ -196,6 +197,13 @@ final class CompanyProfileScreen
                 . '<b>' . Ui::e(CompanyProfile::show($k, $d['new'] ?? '')) . '</b>';
         }
         return implode('<br>', $out);
+    }
+
+    /** @param list<string> $items "A", "A and B", "A, B and C" */
+    private static function andList(array $items): string
+    {
+        $last = array_pop($items);
+        return $items === [] ? (string) $last : implode(', ', $items) . ' and ' . $last;
     }
 
     /** @param array<string,string> $opts */
