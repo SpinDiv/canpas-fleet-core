@@ -84,19 +84,19 @@ final class QuotesScreen
                 if ($n <= 0 && (float) $v <= 0) {
                     continue;
                 }
-                $rates .= '<span class="muted small">' . Ui::e(Quotes::FIELD_LABELS[$f] ?? $f) . ': '
-                    . ((float) $v < $n ? '<s>' . Ui::e(Ui::money($n)) . '</s> ' : '') . '<b>' . Ui::e(Ui::money($v)) . '</b></span><br>';
+                $rates .= '<span class="muted small rate">' . Ui::e(Quotes::FIELD_LABELS[$f] ?? $f) . ' '
+                    . ((float) $v < $n ? '<s>' . Ui::e(Ui::money($n)) . '</s> ' : '') . '<b>' . Ui::e(Ui::money($v)) . '</b></span> ';
             }
             $qty = $l['line_type'] === 'delivery' ? (int) $l['qty'] . ' trip' . ((int) $l['qty'] === 1 ? '' : 's') : number_format((float) $l['qty']);
             $rows[] = [
-                '<b>' . Ui::e((string) $l['description']) . '</b><br>' . $rates,
+                '<b>' . Ui::e((string) $l['description']) . '</b><br><span class="rates">' . $rates . '</span>',
                 Ui::e($qty),
                 (float) $l['normal_amount'] > (float) $l['amount'] ? '<s class="muted">' . Ui::e(Ui::money($l['normal_amount'])) . '</s>' : Ui::e(Ui::money($l['normal_amount'])),
                 '<b>' . Ui::e(Ui::money($l['amount'])) . '</b>',
             ];
         }
         $saving = $normalTotal - $total;
-        return '<div class="table-wrap">' . Ui::table(['Item', '>Qty', '>Normal', '>Special'], $rows) . '</div>'
+        return Ui::table(['Item', '>Qty', '>Normal', '>Special'], $rows)
             . '<dl class="totals"><dt>Normal price</dt><dd class="num"><s class="muted">' . Ui::e(Ui::money($normalTotal)) . '</s></dd>'
             . '<dt><b>Special price</b></dt><dd class="num"><b>' . Ui::e(Ui::money($total)) . '</b></dd>'
             . ($saving > 0.004 ? '<dt>You save</dt><dd class="num save">' . Ui::e(Ui::money($saving)) . '</dd>' : '')
@@ -164,10 +164,11 @@ final class QuotesScreen
     /** Emails sent about this order (any order), for the record. */
     public static function emailsCard(array $o): string
     {
-        $rows = [];
+        $items = '';
         foreach (Mail::forOrder($o['id']) as $m) {
-            $rows[] = [Ui::e(Ui::when($m['created_at'])), Ui::e($m['to_email']), Ui::e($m['subject']), $m['sent_ok'] ? Ui::pill('active', 'Sent') : Ui::pill('suspended', 'Not sent')];
+            $items .= '<li><span><b>' . Ui::e($m['subject']) . '</b><br><span class="muted small">To ' . Ui::e($m['to_email']) . ' · ' . Ui::e(Ui::when($m['created_at'])) . '</span></span>'
+                . ($m['sent_ok'] ? Ui::pill('active', 'Sent') : Ui::pill('suspended', 'Not sent')) . '</li>';
         }
-        return $rows === [] ? '' : Ui::card('Emails sent', '<div class="table-wrap">' . Ui::table(['When', 'To', 'Subject', 'Status'], $rows) . '</div>');
+        return $items === '' ? '' : Ui::card('Emails sent', '<ul class="list">' . $items . '</ul>');
     }
 }
