@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Canpas Fleet Core
  * Description: Truck and equipment rental, dispatch and fleet system for Canpas Philippines.
- * Version: 0.6.1
+ * Version: 0.6.2
  * Author: Spindiv Kinetics
  * Author URI: https://spindiv.com
  * Requires PHP: 8.2
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 if (!defined('CANPAS_FLEET_VERSION')) {
-    define('CANPAS_FLEET_VERSION', '0.6.1');
+    define('CANPAS_FLEET_VERSION', '0.6.2');
     define('CANPAS_FLEET_FILE', __FILE__);
     define('CANPAS_FLEET_DIR', __DIR__ . '/');
     // Private files (IDs, licences, signed PDFs, photos) live outside the web root, never in this folder.

@@ -49,11 +49,21 @@ final class Layout
             : $crumbHtml . '<h1>' . $titleE . '</h1>';
         $search = Nav::icon('search', 16);
         $out = Nav::icon('logout');
+        $home = esc_url(Router::url());
+        $burger = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
 
         $chrome = <<<HTML
 <a class="skip" href="#main">Skip to main content</a>
 <div class="shell">
-  <nav class="side" aria-label="Main menu">
+  <div class="mbar">
+    <a class="mbar-logo" href="{$home}"><img src="{$logo}" alt="Canpas" width="80" height="24"></a>
+    <span class="spacer"></span>
+    <span class="avatar" title="{$name} · {$role}" aria-hidden="true">{$initials}</span>
+    <a class="icon-btn" href="{$logout}" aria-label="Log out">{$out}</a>
+    <button type="button" class="icon-btn" data-menu-toggle aria-controls="side-nav" aria-expanded="false" aria-label="Menu">{$burger}</button>
+  </div>
+  <nav class="side" id="side-nav" aria-label="Main menu">
+    <div class="mwho"><span class="avatar" aria-hidden="true">{$initials}</span><span class="who-text"><b>{$name}</b><small>{$role}</small></span></div>
     <div class="brand"><img src="{$logo}" alt="Canpas" width="106" height="32"><span>{$sub}</span></div>
     {$nav}
     <a class="nav-item logout" href="{$logout}">{$out}<span>Log out</span></a>
@@ -233,12 +243,20 @@ input.qty{width:96px;height:36px;padding:0 10px;border:1px solid var(--line-2);b
 .field small{font-size:12px}
 .form-actions button[disabled]{opacity:.5;cursor:not-allowed}
 .head-row{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:20px}.head-row h1{margin:0}
+.mbar,.mwho{display:none}
 @media (max-width:820px){
-  .side{flex:1 1 100%;flex-direction:row;flex-wrap:nowrap;overflow-x:auto;padding:8px;gap:4px;align-items:center}
-  .brand{flex-direction:row;align-items:center;padding:4px 8px}.brand span{display:none}.brand img{height:22px}
-  .nav-group{flex-direction:row;padding:0;gap:4px}.nav-label{display:none}
-  .nav-item{height:44px;white-space:nowrap}.nav-item.logout{margin-top:0}
-  .top{padding:0 16px}.search{display:none}
+  .mbar{display:flex;flex:1 1 100%;position:sticky;top:0;z-index:60;height:56px;align-items:center;gap:4px;padding:0 4px 0 16px;background:var(--navy);color:#fff}
+  .mbar-logo{display:flex;align-items:center}.mbar-logo img{height:24px;width:auto}
+  .mbar .avatar{width:32px;height:32px;font-size:12px;margin-right:4px}
+  .icon-btn{width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:0;background:transparent;color:#fff;border-radius:8px;cursor:pointer}
+  .icon-btn:hover,.icon-btn[aria-expanded=true]{background:rgba(255,255,255,.10)}
+  .side{display:none;position:fixed;top:56px;left:0;right:0;bottom:0;z-index:59;overflow-y:auto;padding:12px 12px 24px}
+  .nav-open .side{display:flex}.nav-open body{overflow:hidden}
+  .side .brand,.side .nav-item.logout{display:none}
+  .mwho{display:flex;align-items:center;gap:10px;padding:8px 12px 16px;margin-bottom:8px;border-bottom:1px solid rgba(255,255,255,.08)}
+  .mwho .who-text b{color:#fff}.mwho .who-text small{color:var(--navy-muted)}
+  .nav-item{height:44px;font-size:15px}
+  .top{display:none}
   main{padding:16px}
   body{font-size:16px}
 }

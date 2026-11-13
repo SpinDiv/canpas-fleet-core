@@ -215,6 +215,20 @@
   }
   document.querySelectorAll('canvas[data-signature]').forEach(setupPad);
 
+  // Phone menu: the hamburger opens the navigation; a link, Escape or the button closes it.
+  var menuBtn = document.querySelector('[data-menu-toggle]');
+  if (menuBtn) {
+    var setMenu = function (open) {
+      document.documentElement.classList.toggle('nav-open', open);
+      menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      menuBtn.setAttribute('aria-label', open ? 'Close menu' : 'Menu');
+    };
+    menuBtn.addEventListener('click', function () { setMenu(!document.documentElement.classList.contains('nav-open')); });
+    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') setMenu(false); });
+    document.querySelectorAll('#side-nav a').forEach(function (a) { a.addEventListener('click', function () { setMenu(false); }); });
+    window.addEventListener('resize', function () { if (window.innerWidth > 820) setMenu(false); });
+  }
+
   try {
     var msg = sessionStorage.getItem('cf-toast');
     if (msg) { sessionStorage.removeItem('cf-toast'); toast(msg); }
