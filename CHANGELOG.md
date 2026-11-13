@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0 — 2026-11-13
+
+- **Company profile** (My account). Company admins change the contact person, phone, email and website straight away; Canpas is told what changed.
+- **Legal details need Canpas approval.** A new company name, TIN, registered address or business structure is sent as a change request; it applies only once a Canpas admin approves it. One request waits at a time and can be cancelled.
+- **Registration documents.** Upload a new business (Mayor's) permit with its expiry date, a DTI certificate (sole proprietorship) or SEC registration (partnership or corporation). Each waits for Canpas; an approved one replaces the old one. Opening a document is logged. Company admins get a reminder 30 days before a permit or DTI expires.
+- **Special-rate quotations need complete documents.** Companies with special rates on see what is missing, with a link to Company profile, instead of the Request a quotation button. Normal booking is not affected.
+- **Canpas side:** the company page shows registration documents and change requests with approve/reject; the Approvals page lists companies with updates waiting. Company admins can make a colleague an admin (there is always at least one).
+- **Sign-up** now asks for the business structure and the permit's expiry date.
+- Quotation and bill PDFs always show the company's current approved details.
+
 ## 0.7.2 — 2026-11-13
 
 - The Canpas "C" mark is now the browser tab icon on every portal page (sign-in included), with a home-screen icon for phones.

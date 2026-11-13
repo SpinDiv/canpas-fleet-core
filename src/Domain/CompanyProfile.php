@@ -316,6 +316,23 @@ final class CompanyProfile
     }
 
     /**
+     * Approved or suspended companies with documents or changes waiting for Canpas, oldest first.
+     * @return list<array{id: string, name: string, documents: int, changes: int}>
+     */
+    public static function pendingCompanies(): array
+    {
+        $c = Db::t('companies');
+        $rows = Db::rows(Db::prepare(
+            "SELECT LOWER(HEX(c.id)) AS id, c.name,
+                (SELECT COUNT(*) FROM " . Db::t('company_documents') . " d WHERE d.company_id = c.id AND d.status = %s) AS documents,
+                (SELECT COUNT(*) FROM " . Db::t('company_changes') . " x WHERE x.company_id = c.id AND x.status = %s) AS changes
+             FROM {$c} c WHERE c.status <> %s HAVING documents > 0 OR changes > 0 ORDER BY c.name",
+            'pending', 'pending', 'pending'
+        ));
+        return array_map(static fn($r) => ['id' => (string) $r['id'], 'name' => (string) $r['name'], 'documents' => (int) $r['documents'], 'changes' => (int) $r['changes']], $rows);
+    }
+
+    /**
      * Whether the company may request special-rate quotations: a business structure, an approved
      * unexpired business permit, and an approved DTI (sole proprietor, unexpired) or SEC registration.
      *

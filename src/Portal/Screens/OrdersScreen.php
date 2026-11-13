@@ -6,6 +6,7 @@ namespace Canpas\Fleet\Portal\Screens;
 
 use Canpas\Fleet\Domain\Catalog;
 use Canpas\Fleet\Domain\Companies;
+use Canpas\Fleet\Domain\CompanyProfile;
 use Canpas\Fleet\Domain\Orders;
 use Canpas\Fleet\Domain\Pricing;
 use Canpas\Fleet\Domain\Stock;
@@ -313,11 +314,22 @@ final class OrdersScreen
         return $actor->companyId !== null && Companies::specialRates($actor->companyId);
     }
 
+    /** Documents complete for a quotation request (checked once per page). */
+    private static function quoteReady(Actor $actor): bool
+    {
+        static $ready = [];
+        $id = (string) $actor->companyId;
+        return $ready[$id] ??= CompanyProfile::quoteReady($id)['ok'];
+    }
+
     /** For companies allowed special rates: the note that goes with a quotation request. */
     private static function quoteRequestFields(Actor $actor, string $kind): string
     {
         if (!self::eligible($actor)) {
             return '';
+        }
+        if (!self::quoteReady($actor)) {
+            return CompanyProfileScreen::readinessBanner((string) $actor->companyId, true, true);
         }
         return '<div class="form-grid"><div class="field wide quote-ask"><label for="f-qask-' . $kind . '">Want a special rate? <span class="opt">(for a quotation request)</span></label>'
             . '<textarea id="f-qask-' . $kind . '" name="note" rows="2" maxlength="1000" placeholder="e.g. Regular project, 3 months — hoping for ₱120 per frame per month"></textarea>'
@@ -326,7 +338,7 @@ final class OrdersScreen
 
     private static function quoteRequestButton(Actor $actor, string $kind): string
     {
-        return self::eligible($actor) ? '<button type="submit" class="btn" data-submit-to="quote-requests/' . $kind . '">Request a quotation</button>' : '';
+        return self::eligible($actor) && self::quoteReady($actor) ? '<button type="submit" class="btn" data-submit-to="quote-requests/' . $kind . '">Request a quotation</button>' : '';
     }
 
     private static function dateFields(): string

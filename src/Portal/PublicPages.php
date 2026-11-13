@@ -107,9 +107,13 @@ HTML;
       <div class="field"><label for="phone">Mobile number</label><input id="phone" name="phone" required inputmode="tel" autocomplete="tel" placeholder="0917 123 4567"></div>
     </div>
     <div class="field"><label for="address">Company address</label><input id="address" name="address" required maxlength="255" autocomplete="street-address"></div>
-    <div class="field"><label for="permit">Business permit or DTI/SEC registration</label>
+    <div class="two">
+      <div class="field"><label for="structure">Business structure</label><select id="structure" name="structure" required><option value="">Choose…</option><option value="sole_prop">Sole proprietorship</option><option value="partnership">Partnership</option><option value="corporation">Corporation</option></select></div>
+      <div class="field"><label for="permit_expires">Business permit valid until</label><input id="permit_expires" name="permit_expires" type="date" required></div>
+    </div>
+    <div class="field"><label for="permit">Business (Mayor's) permit</label>
       <input id="permit" name="permit" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" required>
-      <small>PDF or photo, up to 10 MB. Only Canpas staff can see it.</small></div>
+      <small>PDF or photo, up to 10 MB. Only Canpas staff can see it. You can add your DTI or SEC registration from Company profile once approved.</small></div>
   </fieldset>
   <fieldset><legend>Your sign-in</legend>
     <div class="field"><label for="contact_name">Your full name</label><input id="contact_name" name="contact_name" required autocomplete="name"></div>

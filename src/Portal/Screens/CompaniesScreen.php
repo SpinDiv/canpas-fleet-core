@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Canpas\Fleet\Portal\Screens;
 
 use Canpas\Fleet\Domain\Companies;
+use Canpas\Fleet\Domain\CompanyProfile;
 use Canpas\Fleet\Portal\Layout;
 use Canpas\Fleet\Portal\Router;
 use Canpas\Fleet\Portal\Ui;
@@ -36,7 +37,22 @@ final class CompaniesScreen
             $cards .= Ui::card($c['name'], $dl . $actions);
         }
         if ($cards === '') {
-            $cards = Ui::card('', '<p class="empty">No company is waiting for approval.</p>');
+            $cards = Ui::card('', '<p class="empty">No new company is waiting for approval.</p>');
+        }
+        $rows = [];
+        foreach (CompanyProfile::pendingCompanies() as $p) {
+            $what = [];
+            if ($p['documents'] > 0) {
+                $what[] = $p['documents'] . ' document' . ($p['documents'] > 1 ? 's' : '');
+            }
+            if ($p['changes'] > 0) {
+                $what[] = 'details change';
+            }
+            $rows[] = [Ui::e($p['name']), Ui::e(implode(' and ', $what)),
+                '<a class="btn" href="' . esc_url(add_query_arg('id', $p['id'], Router::url('companies'))) . '">Review</a>'];
+        }
+        if ($rows !== []) {
+            $cards = Ui::card('Profile updates waiting', Ui::table(['Company', 'Waiting', ''], $rows)) . $cards;
         }
         Layout::page($actor, 'approvals', 'Approvals', '<div class="stack">' . $cards . '</div>', 'Customers');
     }
@@ -79,15 +95,17 @@ final class CompaniesScreen
             Layout::message('Company not found', $e->getMessage(), 404, ['label' => 'Back to companies', 'href' => Router::url('companies')]);
             return;
         }
+        $profile = CompanyProfile::company($id);
         $dl = '<dl class="dl">'
             . '<dt>Status</dt><dd>' . Ui::pill($c['status']) . ($c['status_reason'] ? ' <span class="muted small">' . Ui::e($c['status_reason']) . '</span>' : '') . '</dd>'
             . '<dt>TIN</dt><dd class="num">' . Ui::e($c['tin']) . '</dd>'
             . '<dt>Address</dt><dd>' . Ui::e($c['address']) . '</dd>'
+            . '<dt>Business structure</dt><dd>' . Ui::e(CompanyProfile::STRUCTURES[(string) $profile['structure']] ?? 'Not set') . '</dd>'
             . '<dt>Contact</dt><dd>' . Ui::e($c['contact_name']) . ' · ' . Ui::e($c['contact_phone']) . ' · ' . Ui::e($c['contact_email']) . '</dd>'
+            . ($profile['website'] ? '<dt>Website</dt><dd>' . Ui::e((string) $profile['website']) . '</dd>' : '')
             . '<dt>Requested</dt><dd>' . Ui::e(Ui::when($c['created_at'])) . '</dd>'
             . '<dt>Approved</dt><dd>' . Ui::e(Ui::when($c['approved_at'])) . '</dd>'
             . '<dt>Special rates</dt><dd>' . (Companies::specialRates($id) ? Ui::pill('active', 'Can request quotations') : '<span class="muted">Normal rates only</span>') . '</dd>'
-            . ($c['has_permit'] ? '<dt>Business permit</dt><dd><a href="' . esc_url(add_query_arg('company', $id, Router::url('file'))) . '" target="_blank" rel="noopener">Open document</a> <span class="muted small">(viewing is logged)</span></dd>' : '')
             . '</dl>';
 
         $actions = '';
@@ -113,6 +131,8 @@ final class CompaniesScreen
         }
         $body = '<div class="split">' . Ui::card('Details', $dl)
             . Ui::card('People who can sign in', Ui::table(['Name', 'Email', 'Role', 'Status'], $rows, 'No sign-ins.')) . '</div>';
+        $body .= CompanyProfileScreen::staffChangesCard($actor, $id)
+            . CompanyProfileScreen::documentsCard($actor, $id, (string) $profile['structure'], false, true);
         Layout::page($actor, 'companies', $c['name'], $body, 'Customers / Companies', $actions);
     }
 
