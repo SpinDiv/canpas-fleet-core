@@ -69,6 +69,10 @@ final class Pages
         'expenses' => [Screens\FieldScreen::class, 'expenses'],
         'loadings' => [Screens\FieldScreen::class, 'loadings'],
         'returns' => [Screens\FieldScreen::class, 'returns'],
+        'statements' => [Screens\BillingScreen::class, 'statements'],
+        'my-statements' => [Screens\BillingScreen::class, 'myStatements'],
+        'maintenance' => [Screens\ManageScreen::class, 'maintenance'],
+        'reports' => [Screens\ManageScreen::class, 'reports'],
     ];
 
     public static function render(Actor $actor, string $slug): void
@@ -100,11 +104,22 @@ final class Pages
                 $param('photo') !== '' => \Canpas\Fleet\Domain\Trips::photo($actor, $param('photo'), (int) ($_GET['n'] ?? 0)),
                 $param('sig') !== '' => \Canpas\Fleet\Domain\Trips::signature($actor, $param('sig')),
                 $param('expense') !== '' => \Canpas\Fleet\Domain\Expenses::receipt($actor, $param('expense')),
+                $param('maint') !== '' => \Canpas\Fleet\Domain\Maintenance::receipt($actor, $param('maint')),
+                $param('bill') !== '' => ['bytes' => \Canpas\Fleet\Domain\Billing::pdf($actor, $param('bill')), 'name' => 'bill.pdf'],
                 default => \Canpas\Fleet\Domain\Companies::permitFile($actor, $param('company')),
             };
         } catch (\Canpas\Fleet\Support\DomainError $e) {
             Layout::message('Document not available', $e->getMessage(), $e->reason === 'not_found' ? 404 : 403);
             return;
+        }
+        if (isset($f['bytes'])) {
+            nocache_headers();
+            header('Content-Type: application/pdf');
+            header('Content-Length: ' . strlen($f['bytes']));
+            header('Content-Disposition: inline; filename="' . $f['name'] . '"');
+            header('X-Content-Type-Options: nosniff');
+            echo $f['bytes'];
+            exit;
         }
         \Canpas\Fleet\Support\Files::stream($f['path'], $f['name']);
     }

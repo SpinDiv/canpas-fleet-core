@@ -299,6 +299,7 @@ textarea.mono-area{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monosp
 .count-3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 @media (max-width:820px){.phone-form input,.phone-form select,.phone-form textarea,.inline-form select,.unit-pick{font-size:16px;min-height:44px}.btn{min-height:44px}
   .steps li{min-width:0;font-size:11px;padding:8px 2px}.count-row select{width:160px}}
+.dl.totals{max-width:440px;margin:4px 0 0 auto;grid-template-columns:1fr auto}.dl.totals dd{text-align:right}
 CSS;
     }
 }

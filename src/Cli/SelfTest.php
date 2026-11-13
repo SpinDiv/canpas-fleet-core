@@ -6,6 +6,7 @@ namespace Canpas\Fleet\Cli;
 
 use Canpas\Fleet\Audit\Audit;
 use Canpas\Fleet\Domain\Agreements;
+use Canpas\Fleet\Domain\Billing;
 use Canpas\Fleet\Domain\Catalog;
 use Canpas\Fleet\Domain\Companies;
 use Canpas\Fleet\Domain\Dispatch;
@@ -13,9 +14,11 @@ use Canpas\Fleet\Domain\Distance;
 use Canpas\Fleet\Domain\Documents;
 use Canpas\Fleet\Domain\Drivers;
 use Canpas\Fleet\Domain\Expenses;
+use Canpas\Fleet\Domain\Maintenance;
 use Canpas\Fleet\Domain\Orders;
 use Canpas\Fleet\Domain\Payments;
 use Canpas\Fleet\Domain\Pricing;
+use Canpas\Fleet\Domain\Reports;
 use Canpas\Fleet\Domain\Requirements;
 use Canpas\Fleet\Domain\Settings;
 use Canpas\Fleet\Domain\Trips;
@@ -121,6 +124,7 @@ final class SelfTest
             self::milestone2($sfx, $admin, $dispatcher, $custA, $userB, $suspended);
             self::milestone3($sfx, $admin, $dispatcher, $custA, $userB);
             self::milestone4($sfx, $admin, $dispatcher, $custA, $userB, $mk, $users);
+            self::milestone5($sfx, $admin, $dispatcher, $custA, $userB);
         } catch (\Throwable $e) {
             self::check('Self-test ran to completion', false, get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
         } finally {
@@ -674,6 +678,161 @@ final class SelfTest
         }
     }
 
+    /** Milestone 5: final bill, settlement, refunds, statements, maintenance and reports. */
+    private static function milestone5(string $sfx, Actor $admin, Actor $dispatcher, Actor $custA, Actor $userB): void
+    {
+        $savedSettings = get_option(Settings::OPTION, null);
+        Orders::$refPrefix = 'TST';
+        Billing::$refPrefix = 'TSB';
+        add_filter('pre_wp_mail', '__return_true');
+        $png = wp_tempnam('cftest5.png');
+        file_put_contents($png, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));
+        $file = static fn(): array => ['name' => 'r.png', 'tmp_name' => $png, 'size' => filesize($png), 'error' => UPLOAD_ERR_OK];
+        $day = static fn(int $n): string => Db::todayManila()->modify("+{$n} days")->format('Y-m-d');
+        $deposit = static fn(string $orderId, float $amt) => Db::insert('payments', [
+            'id' => Uuid::v7(), 'order_id' => $orderId, 'company_id' => Orders::row($orderId)['company_id'], 'kind' => 'deposit', 'amount' => number_format($amt, 2, '.', ''),
+            'method' => 'bank', 'reference' => 'TEST', 'status' => 'received', 'received_by' => $dispatcher->userId, 'received_at' => Db::now(), 'created_by' => $custA->userId, 'created_at' => Db::now(),
+        ], ['id', 'order_id', 'company_id']);
+        $sum = static fn(array $lines, string $kind): float => round(array_sum(array_map(static fn($l) => (float) $l['amount'], array_filter($lines, static fn($l) => $l['kind'] === $kind))), 2);
+        try {
+            $applied = Db::value(Db::prepare('SELECT status FROM ' . Db::t('migrations') . ' WHERE version = %s', '0006_billing'));
+            self::check('Migration 0006_billing is applied', $applied === 'applied', (string) $applied);
+            $rates = ['starting_fee' => 3000, 'rate_per_km' => 50, 'driver_flat_fee' => 1500, 'driver_flat_km' => 10, 'driver_rate_per_km' => 30, 'daily_rate' => 1000, 'free_km' => 0, 'deposit_mode' => 'percent', 'deposit_value' => 30, 'active' => 1];
+            $typeName = "Selftest M5 truck {$sfx}";
+            $type = Catalog::saveTruckType($admin, ['name' => $typeName] + $rates);
+            $truck = Catalog::saveTruck($admin, ['type_id' => $type, 'plate' => "TB5{$sfx}", 'odometer_km' => 1000, 'status' => 'available']);
+            $item = ['unit' => 'pc', 'rate_day' => 8, 'rate_week' => 45, 'rate_month' => 150, 'min_days' => 1, 'deposit_mode' => 'percent', 'deposit_value' => 30, 'replacement_cost' => 2500, 'damage_fee' => 600, 'active' => 1];
+            $itemName = "Selftest M5 frames {$sfx}";
+            $frames = Catalog::saveItem($admin, ['name' => $itemName, 'category' => 'scaffolding'] + $item);
+            Stock::adjust($admin, $frames, 100, 'opening');
+            Settings::save($admin, ['yard_lat' => '14.329400', 'yard_lng' => '120.936700', 'hold_hours' => 24, 'driver_km_basis' => 'round_trip', 'notify_email' => '', 'km_tolerance_pct' => 5, 'fuel_price_per_liter' => 60, 'service_interval_km' => 10000, 'delivery_truck_type' => $type]);
+
+            // A truck order with a driver, returned 3 days late with more km than quoted and fuel short.
+            $t1 = Orders::bookTruck($custA, ['truck_type_id' => $type, 'start_date' => $day(5), 'days' => 2, 'needs_driver' => '1', 'site_address' => 'Imus, Cavite', 'site_coords' => '14.4296, 120.9367']);
+            $o = Orders::row($t1);
+            $quoted = (float) $o['distance_km'];
+            $booked = (float) $o['total'];
+            Db::update('orders', ['status' => 'returned', 'start_date' => $day(-4), 'end_date' => $day(-3), 'odo_out' => 1000, 'odo_in' => 1090, 'actual_km' => 90,
+                'fuel_short_liters' => '5', 'returned_at' => Db::now(), 'released_at' => Db::now()], ['id' => $t1], ['id']);
+            Db::insert('order_assets', ['id' => Uuid::v7(), 'order_id' => $t1, 'asset_type' => 'truck', 'asset_id' => $truck, 'start_date' => $day(-4), 'end_date' => $day(-3), 'assigned_by' => $dispatcher->userId, 'created_at' => Db::now()], ['id', 'order_id', 'asset_id']);
+            Expenses::add($dispatcher, ['kind' => 'toll', 'amount' => '120', 'truck_id' => $truck, 'order_id' => $t1], $file());
+            $deposit($t1, (float) $o['deposit_amount']);
+            Catalog::saveTruckType($admin, ['name' => $typeName, 'daily_rate' => 5000] + $rates, $type);
+
+            self::expect('A dispatcher cannot make the final bill', 'forbidden', static fn() => Billing::prepare($dispatcher, $t1));
+            $inv = Billing::prepare($admin, $t1);
+            $lines = Billing::lines($inv);
+            $repriced = Pricing::truckTrip(['daily_rate' => 1000] + $rates, 90, true, 2)['total'];
+            self::check('The bill starts from the booked price', $sum($lines, 'booked') === $booked, (string) $sum($lines, 'booked'));
+            self::check('Actual km beyond the 5% margin re-prices the trip with the booked rates', $sum($lines, 'km') === round($repriced - $booked, 2), $quoted . ' km quoted → 90 km: ' . $sum($lines, 'km'));
+            self::check('Late return adds days at the booked daily rate, not today\'s (3 × ₱1,000)', $sum($lines, 'late') === 3000.0, (string) $sum($lines, 'late'));
+            self::check('Fuel shortfall is charged at the fuel price (5 L × ₱60)', $sum($lines, 'fuel') === 300.0);
+            self::check('Tolls logged on the order are billed at cost', $sum($lines, 'tolls') === 120.0);
+            $total = round($repriced + 3000 + 300 + 120, 2);
+            self::check('The bill total adds up', (float) Billing::forOrder($t1)['total'] === $total, Billing::forOrder($t1)['total'] . ' vs ' . $total);
+
+            // Changes by hand.
+            self::expect('A customer cannot see a draft bill', 'not_found', static fn() => Billing::get($custA, $inv));
+            self::expect('Adding a charge needs a reason', 'reason_required', static fn() => Billing::addLine($admin, $inv, ['kind' => 'cleaning', 'description' => 'Truck bed cleaning', 'qty' => 1, 'unit_price' => 200]));
+            self::expect('A dispatcher cannot change a bill', 'forbidden', static fn() => Billing::addLine($dispatcher, $inv, ['kind' => 'cleaning', 'description' => 'x', 'qty' => 1, 'unit_price' => 200, 'reason' => 'Muddy bed']));
+            Billing::addLine($admin, $inv, ['kind' => 'cleaning', 'description' => 'Truck bed cleaning', 'qty' => 1, 'unit_price' => 200, 'reason' => 'Bed returned full of mud']);
+            Billing::addLine($admin, $inv, ['kind' => 'discount', 'description' => 'Regular customer', 'qty' => 1, 'unit_price' => 500, 'reason' => 'Approved by the owner']);
+            $bookedLine = array_values(array_filter(Billing::lines($inv), static fn($l) => $l['kind'] === 'booked'))[0];
+            self::expect('The booked price cannot be removed from the bill', 'invalid_input', static fn() => Billing::removeLine($admin, $bookedLine['id'], 'Mistake in booking'));
+            $clean = array_values(array_filter(Billing::lines($inv), static fn($l) => $l['kind'] === 'cleaning'))[0];
+            Billing::removeLine($admin, $clean['id'], 'Customer cleaned it after all');
+            $audits = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('audit_log') . ' WHERE object_id = UNHEX(%s) AND action IN (%s, %s)', $inv, 'invoice.add_line', 'invoice.remove_line'));
+            self::check('Every change after booking keeps who and why (audit log)', $audits === 3 && (float) Billing::forOrder($t1)['total'] === round($total - 500, 2), $audits . ' entries');
+            Billing::prepare($admin, $t1);
+            self::check('Rebuilding the bill keeps the lines added by hand', $sum(Billing::lines($inv), 'discount') === -500.0);
+
+            // Issue and settle: balance due.
+            Billing::issue($admin, $inv);
+            $i = Billing::forOrder($t1);
+            $dep = (float) $o['deposit_amount'];
+            self::check('Issuing applies the deposit and leaves the balance to pay',
+                $i['status'] === 'issued' && (float) $i['deposit_applied'] === $dep && (float) $i['balance_due'] === round($total - 500 - $dep, 2) && (float) $i['refund_due'] === 0.0);
+            self::expect('An issued bill is locked', 'wrong_status', static fn() => Billing::addLine($admin, $inv, ['kind' => 'other', 'description' => 'Late fee', 'qty' => 1, 'unit_price' => 100, 'reason' => 'Late payment']));
+            $due = (float) $i['balance_due'];
+            self::expect('A customer cannot pay more than is due', 'invalid_input', static fn() => Payments::submit($custA, $t1, ['amount' => (string) ($due + 1), 'method' => 'bank', 'reference' => 'BDO-1'], $file()));
+            $p = Payments::submit($custA, $t1, ['amount' => (string) $due, 'method' => 'gcash', 'reference' => 'GC-' . $sfx], $file());
+            self::check('A paid-but-unchecked balance does not close the order', Orders::row($t1)['status'] === 'returned' && Billing::outstanding(Orders::row($t1)) === $due);
+            Payments::receive($dispatcher, $p);
+            self::check('Once the balance is received the bill is settled and the order closed', Billing::forOrder($t1)['status'] === 'settled' && Orders::row($t1)['status'] === 'closed');
+            $pdf = Billing::pdf($custA, $inv);
+            self::check('The customer can download the bill as a PDF', str_starts_with($pdf, '%PDF-1.4') && strlen($pdf) > 1500, strlen($pdf) . ' bytes');
+            self::expect('Another company cannot open the bill', 'not_found', static fn() => Billing::pdf($userB, $inv));
+
+            // Equipment with damage and missing pieces, deposit overpaid → refund.
+            $e1 = Orders::bookEquipment($custA, ['start_date' => $day(3), 'days' => 7, 'fulfilment' => 'pickup', 'qty' => [$frames => 20]]);
+            $line = Db::value(Db::prepare('SELECT LOWER(HEX(id)) FROM ' . Db::t('order_lines') . ' WHERE order_id = UNHEX(%s) AND line_type = %s', $e1, 'item'));
+            Db::update('orders', ['status' => 'returned', 'returned_at' => Db::now(), 'loaded_at' => Db::now()], ['id' => $e1], ['id']);
+            Db::insert('order_counts', ['id' => Uuid::v7(), 'order_id' => $e1, 'line_id' => $line, 'direction' => 'in', 'qty_good' => 17, 'qty_damaged' => 2, 'qty_missing' => 1, 'counted_by' => $dispatcher->userId, 'created_at' => Db::now()], ['id', 'order_id', 'line_id']);
+            Catalog::saveItem($admin, ['name' => $itemName, 'category' => 'scaffolding', 'damage_fee' => 999] + $item, $frames);
+            $inv2 = Billing::prepare($admin, $e1);
+            $l2 = Billing::lines($inv2);
+            self::check('Damaged and missing pieces are charged at the booked damage fee and replacement cost', $sum($l2, 'damage') === 1200.0 && $sum($l2, 'missing') === 2500.0,
+                $sum($l2, 'damage') . ' / ' . $sum($l2, 'missing'));
+            $e2 = Orders::bookEquipment($custA, ['start_date' => $day(3), 'days' => 7, 'fulfilment' => 'pickup', 'qty' => [$frames => 20]]);
+            Db::update('orders', ['status' => 'returned', 'returned_at' => Db::now(), 'loaded_at' => Db::now()], ['id' => $e2], ['id']);
+            $deposit($e2, 2000);
+            $inv3 = Billing::prepare($admin, $e2);
+            Billing::issue($admin, $inv3);
+            $i3 = Billing::forOrder($e2);
+            self::check('When the deposit is more than the bill, the difference is due back', (float) $i3['balance_due'] === 0.0 && (float) $i3['refund_due'] === round(2000 - (float) $i3['total'], 2) && Orders::row($e2)['status'] === 'returned');
+            self::expect('A dispatcher cannot record refunds', 'forbidden', static fn() => Payments::recordRefund($dispatcher, $e2, ['amount' => '100', 'method' => 'bank', 'reference' => 'X1']));
+            self::expect('A refund cannot be more than is due back', 'invalid_input', static fn() => Payments::recordRefund($admin, $e2, ['amount' => (string) ((float) $i3['refund_due'] + 1), 'method' => 'bank', 'reference' => 'BDO-R1']));
+            Payments::recordRefund($admin, $e2, ['amount' => $i3['refund_due'], 'method' => 'bank', 'reference' => 'BDO-R1']);
+            self::check('Once the refund is made the order is closed', Orders::row($e2)['status'] === 'closed' && Billing::forOrder($e2)['status'] === 'settled');
+
+            // Cancelled order with a deposit.
+            $e3 = Orders::bookEquipment($custA, ['start_date' => $day(40), 'days' => 7, 'fulfilment' => 'pickup', 'qty' => [$frames => 10]]);
+            $deposit($e3, 500);
+            Db::update('orders', ['status' => 'cancelled'], ['id' => $e3], ['id']);
+            self::expect('Refunding a cancelled order\'s deposit needs a reason', 'reason_required', static fn() => Payments::recordRefund($admin, $e3, ['amount' => '500', 'method' => 'gcash', 'reference' => 'GC-R2']));
+            Payments::recordRefund($admin, $e3, ['amount' => '500', 'method' => 'gcash', 'reference' => 'GC-R2', 'reason' => 'Cancelled 30 days ahead, full refund']);
+            self::check('The cancelled order\'s deposit is fully refunded', Payments::refundable(Orders::row($e3)) === 0.0);
+
+            // Statements.
+            self::expect('A company user cannot see the company statement', 'forbidden', static fn() => Billing::statement($userB, (string) $userB->companyId));
+            $st = Billing::statement($custA, (string) $userB->companyId); // asks for another company: gets its own
+            $billed = round((float) Billing::forOrder($t1)['total'] + (float) Billing::forOrder($e2)['total'], 2);
+            self::check('The statement shows only the company\'s own issued bills, with a running balance', $st['billed'] === $billed && abs($st['balance'] - ($billed - $st['paid'] - $st['deposits'] + $st['refunded'])) < 0.01,
+                'billed ' . $st['billed'] . ', balance ' . $st['balance']);
+
+            // Maintenance.
+            self::expect('A dispatcher cannot log maintenance', 'forbidden', static fn() => Maintenance::log($dispatcher, ['truck_id' => $truck, 'kind' => 'service', 'done_on' => $day(0), 'odometer' => '5000'], null));
+            self::expect('A service needs the odometer', 'invalid_input', static fn() => Maintenance::log($admin, ['truck_id' => $truck, 'kind' => 'service', 'done_on' => $day(0)], null));
+            Maintenance::log($admin, ['truck_id' => $truck, 'kind' => 'service', 'done_on' => $day(0), 'odometer' => '5000', 'cost' => '8500', 'vendor' => 'Selftest garage'], $file());
+            $tr = Db::row(Db::prepare('SELECT odometer_km, next_service_km FROM ' . Db::t('trucks') . ' WHERE id = UNHEX(%s)', $truck));
+            self::check('A service sets the next one at the odometer + interval', (int) $tr['next_service_km'] === 15000 && (int) $tr['odometer_km'] === 5000);
+            Maintenance::log($admin, ['truck_id' => $truck, 'kind' => 'insurance', 'done_on' => $day(0), 'cost' => '12000', 'next_due_date' => $day(10)], null);
+            Db::update('trucks', ['status' => 'repair'], ['id' => $truck], ['id']);
+            $alerts = array_filter(Maintenance::alerts(), static fn($a) => $a['asset'] === strtoupper("TB5{$sfx}"));
+            $whats = array_column($alerts, 'what');
+            self::check('Alerts show insurance expiring soon and the truck in repair', in_array('Insurance expires soon', $whats, true) && in_array('In repair', $whats, true), implode(', ', $whats));
+            Maintenance::log($admin, ['truck_id' => $truck, 'kind' => 'repair', 'done_on' => $day(0), 'cost' => '3000', 'back_in_service' => '1'], null);
+            self::check('Logging the repair puts the truck back in service', Db::value(Db::prepare('SELECT status FROM ' . Db::t('trucks') . ' WHERE id = UNHEX(%s)', $truck)) === 'available');
+
+            // Reports.
+            self::expect('Customers cannot open reports', 'forbidden', static fn() => Reports::run($custA, 'revenue_customer', $day(0), $day(0)));
+            $rc = Reports::run($dispatcher, 'revenue_customer', $day(0), $day(0));
+            $mine = array_values(array_filter($rc['rows'], static fn($r) => str_starts_with((string) $r['customer'], "Selftest A {$sfx}")))[0] ?? ['total' => 0];
+            self::check('Revenue by customer matches the issued bills', (float) $mine['total'] === $billed, (string) $mine['total']);
+            $rt = Reports::run($dispatcher, 'trucks', $day(-10), $day(0));
+            $row = array_values(array_filter($rt['rows'], static fn($r) => $r['truck'] === strtoupper("TB5{$sfx}")))[0] ?? [];
+            self::check('The truck report shows its revenue, km and costs',
+                ($row['revenue'] ?? 0) === (float) Billing::forOrder($t1)['total'] && ($row['km'] ?? 0) === 90 && ($row['maintenance'] ?? 0) === 23500.0 && ($row['other'] ?? 0) === 120.0 && ($row['days_out'] ?? 0) === 2,
+                json_encode(array_intersect_key($row, array_flip(['revenue', 'km', 'maintenance', 'other', 'days_out']))));
+        } finally {
+            @unlink($png);
+            remove_filter('pre_wp_mail', '__return_true');
+            Orders::$refPrefix = 'ORD';
+            Billing::$refPrefix = 'INV';
+            $savedSettings === null ? delete_option(Settings::OPTION) : update_option(Settings::OPTION, $savedSettings, false);
+        }
+    }
+
     /** A 300×100 PNG data URL, with a scribble or blank. */
     private static function signaturePng(bool $ink): string
     {
@@ -729,6 +888,10 @@ final class SelfTest
             }
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('expenses') . ' WHERE user_id = %d', $uid));
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('driver_profiles') . ' WHERE user_id = %d', $uid));
+            foreach (Db::rows(Db::prepare('SELECT receipt_file FROM ' . Db::t('maintenance') . ' WHERE created_by = %d', $uid)) as $r) {
+                Files::delete($r['receipt_file']);
+            }
+            Db::exec(Db::prepare('DELETE FROM ' . Db::t('maintenance') . ' WHERE created_by = %d', $uid));
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('audit_log') . ' WHERE actor_user_id = %d', $uid));
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('memberships') . ' WHERE user_id = %d', $uid));
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('file_views') . ' WHERE user_id = %d', $uid));
@@ -752,6 +915,11 @@ final class SelfTest
             }
             foreach (Db::rows(Db::prepare('SELECT handover_signature FROM ' . Db::t('orders') . ' WHERE company_id = UNHEX(%s)', $c)) as $r) {
                 Files::delete($r['handover_signature']);
+            }
+            Db::exec(Db::prepare('DELETE l FROM ' . Db::t('invoice_lines') . ' l JOIN ' . Db::t('invoices') . ' i ON i.id = l.invoice_id WHERE i.company_id = UNHEX(%s)', $c));
+            Db::exec(Db::prepare('DELETE FROM ' . Db::t('invoices') . ' WHERE company_id = UNHEX(%s)', $c));
+            foreach (Db::rows(Db::prepare('SELECT x.receipt_file FROM ' . Db::t('expenses') . $orderOf, $c)) as $r) {
+                Files::delete($r['receipt_file']);
             }
             foreach (['trip_events', 'trips', 'order_assets', 'order_counts', 'expenses'] as $tbl) {
                 Db::exec(Db::prepare('DELETE x FROM ' . Db::t($tbl) . $orderOf, $c));
@@ -792,6 +960,7 @@ final class SelfTest
         Db::exec(Db::prepare('DELETE FROM ' . Db::t('trucks') . ' WHERE plate LIKE %s', $likeUp));
         Db::exec(Db::prepare('DELETE FROM ' . Db::t('truck_types') . ' WHERE name LIKE %s', $like));
         Db::exec(Db::prepare('DELETE FROM ' . Db::t('sequences') . ' WHERE name LIKE %s OR name LIKE %s', 'T' . strtoupper(substr($sfx, 0, 3)) . '-%', 'TST-%'));
+        Db::exec(Db::prepare('DELETE FROM ' . Db::t('sequences') . ' WHERE name LIKE %s', 'TSB-%'));
         require_once ABSPATH . 'wp-admin/includes/user.php';
         foreach ($users as $uid) {
             wp_delete_user($uid);

@@ -119,6 +119,9 @@ final class RequirementsScreen
             . ($r['pending'] > 0 ? ' · waiting for check <span class="num">' . Ui::e(Ui::money($r['pending'])) . '</span>' : '') . '</p>';
         $rows = [];
         foreach (Payments::forOrder((string) $o['id']) as $p) {
+            if ($p['kind'] !== 'deposit') {
+                continue;
+            }
             $acts = '';
             if ($staff && $p['status'] === 'pending') {
                 $acts = '<div class="row-actions">' . Ui::action('Received', "payments/{$p['id']}/receive", 'primary', 'Mark ' . Ui::money($p['amount']) . ' as received? Check that it is in the Canpas account first.')
@@ -280,7 +283,7 @@ final class RequirementsScreen
                 Ui::e(Ui::when($p['created_at'])),
                 '<a href="' . esc_url(Pages::fileUrl(['payment' => $p['id']])) . '" target="_blank" rel="noopener">Proof</a>',
                 self::paymentPill($p) . ($p['status_reason'] ? '<br><span class="muted small">' . Ui::e($p['status_reason']) . '</span>' : ''),
-                Ui::e(Ui::money($p['amount'])) . '<br><span class="muted small">of ' . Ui::e(Ui::money($p['deposit_amount'])) . ' deposit</span>',
+                Ui::e(Ui::money($p['amount'])) . '<br><span class="muted small">' . ($p['kind'] === 'deposit' ? 'of ' . Ui::e(Ui::money($p['deposit_amount'])) . ' deposit' : Ui::e(Payments::KINDS[$p['kind']] ?? $p['kind'])) . '</span>',
                 $acts,
             ];
         }

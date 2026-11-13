@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Canpas\Fleet\Http;
 
 use Canpas\Fleet\Domain\Agreements;
+use Canpas\Fleet\Domain\Billing;
 use Canpas\Fleet\Domain\Catalog;
 use Canpas\Fleet\Domain\Companies;
 use Canpas\Fleet\Domain\Dispatch;
 use Canpas\Fleet\Domain\Documents;
 use Canpas\Fleet\Domain\Drivers;
 use Canpas\Fleet\Domain\Expenses;
+use Canpas\Fleet\Domain\Maintenance;
 use Canpas\Fleet\Domain\Orders;
 use Canpas\Fleet\Domain\Payments;
 use Canpas\Fleet\Domain\Requirements;
@@ -232,6 +234,37 @@ final class Rest
         self::post('/drivers/(?P<uid>\d+)', static function (Actor $a, \WP_REST_Request $r): array {
             Drivers::save($a, (int) $r['uid'], self::body($r));
             return ['message' => 'Driver saved.'];
+        });
+
+        // Billing and settlement.
+        self::post('/orders/' . self::ID . '/bill', static function (Actor $a, \WP_REST_Request $r): array {
+            Billing::prepare($a, (string) $r['id']);
+            return ['message' => 'Final bill worked out. Check it, then issue it.'];
+        });
+        self::post('/bills/' . self::ID . '/lines', static function (Actor $a, \WP_REST_Request $r): array {
+            Billing::addLine($a, (string) $r['id'], self::body($r));
+            return ['message' => 'Line added.'];
+        });
+        self::post('/bill-lines/' . self::ID . '/remove', static function (Actor $a, \WP_REST_Request $r): array {
+            Billing::removeLine($a, (string) $r['id'], (string) $r->get_param('reason'));
+            return ['message' => 'Line removed.'];
+        });
+        self::post('/bills/' . self::ID . '/issue', static function (Actor $a, \WP_REST_Request $r): array {
+            Billing::issue($a, (string) $r['id']);
+            return ['message' => 'Bill issued and emailed to the customer.'];
+        });
+        self::post('/orders/' . self::ID . '/record-payment', static function (Actor $a, \WP_REST_Request $r): array {
+            Payments::recordReceived($a, (string) $r['id'], self::body($r));
+            return ['message' => 'Payment recorded.'];
+        });
+        self::post('/orders/' . self::ID . '/refund', static function (Actor $a, \WP_REST_Request $r): array {
+            Payments::recordRefund($a, (string) $r['id'], self::body($r));
+            return ['message' => 'Refund recorded.'];
+        });
+        self::post('/maintenance', static function (Actor $a, \WP_REST_Request $r): array {
+            $files = $r->get_file_params();
+            Maintenance::log($a, self::body($r), $files['receipt'] ?? null);
+            return ['message' => 'Maintenance recorded.'];
         });
 
         // Settings.

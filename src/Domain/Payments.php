@@ -18,7 +18,9 @@ use Canpas\Fleet\Tenancy\Actor;
  */
 final class Payments
 {
-    public const METHODS = ['bank' => 'Bank transfer', 'gcash' => 'GCash', 'other' => 'Other'];
+    public const METHODS = ['bank' => 'Bank transfer', 'gcash' => 'GCash', 'cash' => 'Cash at the office', 'other' => 'Other'];
+
+    public const KINDS = ['deposit' => 'Deposit', 'balance' => 'Final bill payment', 'refund' => 'Refund to customer'];
 
     public const STATUS_LABELS = [
         'pending' => 'Waiting for Canpas check',
@@ -38,16 +40,24 @@ final class Payments
         $actor->require('cf_book');
         $o = Orders::row($orderId);
         Orders::assertCustomerAccess($actor, $o);
-        if (!in_array($o['status'], self::OPEN, true)) {
-            throw new DomainError('wrong_status', 'Payments for this order are handled by Canpas. Please contact them.');
+        if (in_array($o['status'], self::OPEN, true)) {
+            $kind = 'deposit';
+        } elseif (Billing::outstanding($o) > 0) {
+            $kind = 'balance';
+        } else {
+            throw new DomainError('wrong_status', 'Nothing is due on this order right now.');
         }
         $amount = round((float) str_replace([',', '₱', ' '], '', (string) ($in['amount'] ?? '')), 2);
         if ($amount <= 0 || $amount > 10000000) {
             throw new DomainError('invalid_input', 'Enter the amount you paid.', ['field' => 'amount']);
         }
+        if ($kind === 'balance' && $amount > Billing::outstanding($o) + 0.004) {
+            throw new DomainError('invalid_input', 'That is more than the ' . number_format(Billing::outstanding($o), 2) . ' still due.', ['field' => 'amount']);
+        }
+
         $method = (string) ($in['method'] ?? '');
-        if (!isset(self::METHODS[$method])) {
-            throw new DomainError('invalid_input', 'Choose how you paid.', ['field' => 'method']);
+        if (!isset(self::METHODS[$method]) || $method === 'cash') {
+            throw new DomainError('invalid_input', $method === 'cash' ? 'Cash is recorded by Canpas at the office.' : 'Choose how you paid.', ['field' => 'method']);
         }
         $ref = sanitize_text_field(wp_unslash((string) ($in['reference'] ?? '')));
         if (mb_strlen($ref) < 3) {
@@ -59,9 +69,9 @@ final class Payments
         $file = Files::storeUpload($proof, 'payments/' . $o['company_id']);
         $id = Uuid::v7();
         try {
-            Db::transaction(static function () use ($id, $o, $amount, $method, $ref, $file, $actor): void {
+            Db::transaction(static function () use ($id, $o, $kind, $amount, $method, $ref, $file, $actor): void {
                 Db::insert('payments', [
-                    'id' => $id, 'order_id' => $o['id'], 'company_id' => $o['company_id'], 'kind' => 'deposit',
+                    'id' => $id, 'order_id' => $o['id'], 'company_id' => $o['company_id'], 'kind' => $kind,
                     'amount' => number_format($amount, 2, '.', ''), 'method' => $method, 'reference' => mb_substr($ref, 0, 80),
                     'proof_file' => $file['path'], 'proof_name' => $file['name'], 'status' => 'pending',
                     'created_by' => $actor->userId, 'created_at' => Db::now(),
@@ -104,6 +114,103 @@ final class Payments
             Audit::log($p['company_id'], $actor->userId, 'payment.' . ($status === 'received' ? 'receive' : 'reject'), 'payment', $p['id'],
                 ['amount' => (float) $p['amount']] + ($reason !== '' ? ['reason' => $reason] : []));
         });
+        if ($status === 'received' && $p['kind'] === 'balance') {
+            Billing::settleIfDone($actor, $p['order_id']);
+        }
+    }
+
+    /**
+     * Canpas records a final-bill payment it received directly (cash at the office, or a transfer
+     * it already sees in its account).
+     *
+     * @param array<string,mixed> $in amount, method, reference
+     */
+    public static function recordReceived(Actor $actor, string $orderId, array $in): string
+    {
+        $actor->require('cf_confirm_payments');
+        $o = Orders::row($orderId);
+        $due = Billing::outstanding($o);
+        if ($due <= 0) {
+            throw new DomainError('wrong_status', 'Nothing is due on this order.');
+        }
+        [$amount, $method, $ref] = self::money($in, $due);
+        $id = self::staffEntry($actor, $o, 'balance', $amount, $method, $ref, '');
+        Billing::settleIfDone($actor, $o['id']);
+        return $id;
+    }
+
+    /**
+     * Canpas records a refund it paid back to the customer: the deposit left over after the final
+     * bill, or the deposit of a cancelled or declined order.
+     *
+     * @param array<string,mixed> $in amount, method, reference, reason
+     */
+    public static function recordRefund(Actor $actor, string $orderId, array $in): string
+    {
+        $actor->require('cf_settle_deposits');
+        $o = Orders::row($orderId);
+        $max = self::refundable($o);
+        if ($max <= 0) {
+            throw new DomainError('wrong_status', 'There is nothing to refund on this order.');
+        }
+        [$amount, $method, $ref] = self::money($in, $max);
+        $reason = sanitize_text_field(wp_unslash((string) ($in['reason'] ?? '')));
+        if (in_array($o['status'], ['cancelled', 'declined', 'expired'], true) && mb_strlen($reason) < 5) {
+            throw new DomainError('reason_required', 'Say why the deposit is refunded (and any amount kept, per the agreement).', ['field' => 'reason']);
+        }
+        $id = self::staffEntry($actor, $o, 'refund', $amount, $method, $ref, $reason);
+        Billing::settleIfDone($actor, $o['id']);
+        return $id;
+    }
+
+    /** What Canpas still owes back on an order. */
+    public static function refundable(array $o): float
+    {
+        $refunded = self::totals((string) $o['id'], 'refund')['received'];
+        if (in_array($o['status'], ['cancelled', 'declined', 'expired'], true)) {
+            return max(0.0, round(self::totals((string) $o['id'])['received'] - $refunded, 2));
+        }
+        $inv = Billing::forOrder((string) $o['id']);
+        if ($inv === null || $inv['status'] === 'draft') {
+            return 0.0;
+        }
+        return max(0.0, round((float) $inv['refund_due'] - $refunded, 2));
+    }
+
+    /** @return array{0:float,1:string,2:string} */
+    private static function money(array $in, float $max): array
+    {
+        $amount = round((float) str_replace([',', '₱', ' '], '', (string) ($in['amount'] ?? '')), 2);
+        if ($amount <= 0) {
+            throw new DomainError('invalid_input', 'Enter the amount.', ['field' => 'amount']);
+        }
+        if ($amount > $max + 0.004) {
+            throw new DomainError('invalid_input', 'That is more than the ' . number_format($max, 2) . ' due.', ['field' => 'amount']);
+        }
+        $method = (string) ($in['method'] ?? '');
+        if (!isset(self::METHODS[$method])) {
+            throw new DomainError('invalid_input', 'Choose how it was paid.', ['field' => 'method']);
+        }
+        $ref = sanitize_text_field(wp_unslash((string) ($in['reference'] ?? '')));
+        if ($method !== 'cash' && mb_strlen($ref) < 3) {
+            throw new DomainError('invalid_input', 'Enter the transfer or GCash reference number.', ['field' => 'reference']);
+        }
+        return [$amount, $method, $ref !== '' ? $ref : 'Cash'];
+    }
+
+    private static function staffEntry(Actor $actor, array $o, string $kind, float $amount, string $method, string $ref, string $reason): string
+    {
+        $id = Uuid::v7();
+        Db::transaction(static function () use ($id, $actor, $o, $kind, $amount, $method, $ref, $reason): void {
+            Db::insert('payments', [
+                'id' => $id, 'order_id' => $o['id'], 'company_id' => $o['company_id'], 'kind' => $kind,
+                'amount' => number_format($amount, 2, '.', ''), 'method' => $method, 'reference' => mb_substr($ref, 0, 80),
+                'status' => 'received', 'status_reason' => $reason !== '' ? mb_substr($reason, 0, 255) : null,
+                'received_by' => $actor->userId, 'received_at' => Db::now(), 'created_by' => $actor->userId, 'created_at' => Db::now(),
+            ], ['id', 'order_id', 'company_id']);
+            Audit::log($o['company_id'], $actor->userId, 'payment.' . $kind, 'payment', $id, ['order' => $o['ref'], 'amount' => $amount] + ($reason !== '' ? ['reason' => $reason] : []));
+        });
+        return $id;
     }
 
     /** @return array{path:string,name:string} */
@@ -121,10 +228,10 @@ final class Payments
     }
 
     /** @return array{received:float,pending:float} */
-    public static function totals(string $orderId): array
+    public static function totals(string $orderId, string $kind = 'deposit'): array
     {
         $out = ['received' => 0.0, 'pending' => 0.0];
-        foreach (Db::rows(Db::prepare('SELECT status, SUM(amount) AS s FROM ' . Db::t('payments') . ' WHERE order_id = UNHEX(%s) GROUP BY status', $orderId)) as $r) {
+        foreach (Db::rows(Db::prepare('SELECT status, SUM(amount) AS s FROM ' . Db::t('payments') . ' WHERE order_id = UNHEX(%s) AND kind = %s GROUP BY status', $orderId, $kind)) as $r) {
             if (isset($out[$r['status']])) {
                 $out[$r['status']] = round((float) $r['s'], 2);
             }

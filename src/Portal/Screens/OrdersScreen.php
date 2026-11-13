@@ -134,7 +134,7 @@ final class OrdersScreen
         $status = isset(Orders::STATUS_LABELS[$status]) ? $status : '';
         $counts = Orders::counts();
         $tabs = ['' => 'All (' . array_sum($counts) . ')'];
-        foreach (['submitted', 'requested', 'needs_fix', 'confirmed', 'declined', 'expired', 'cancelled'] as $s) {
+        foreach (['submitted', 'requested', 'needs_fix', 'confirmed', 'dispatched', 'on_site', 'returning', 'returned', 'closed', 'declined', 'expired', 'cancelled'] as $s) {
             $label = ['requested' => 'On hold with customer', 'needs_fix' => 'Sent back to customer'][$s] ?? Orders::STATUS_LABELS[$s];
             $tabs[$s] = $label . ' (' . ($counts[$s] ?? 0) . ')';
         }
@@ -195,6 +195,7 @@ final class OrdersScreen
         }
         $showReq = !in_array($o['status'], ['cancelled', 'expired'], true) || !empty($o['gov_id_doc']) || !empty($o['signed_at']);
         $body = '<div class="split">' . Ui::card('Order', $dl) . Ui::card('Price', self::breakdown($draft)) . '</div>'
+            . BillingScreen::card($actor, $o)
             . OpsScreen::card($actor, $o)
             . ($showReq ? RequirementsScreen::card($actor, $o) : '');
         Layout::page($actor, $page, $o['ref'], $body, $page === 'orders' ? 'Operations / Orders' : 'My account / My orders', $actions);

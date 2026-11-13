@@ -52,6 +52,23 @@ final class Dashboard
                 $alerts[] = ['warn', count($board['assign']) . ' confirmed order' . (count($board['assign']) === 1 ? '' : 's') . ' to assign', 'Trucks, units or drivers still missing', Router::url('dispatch')];
             }
         }
+        if ($actor->can('cf_settle_deposits')) {
+            $toBill = count(\Canpas\Fleet\Domain\Billing::list($actor, 'to_bill'));
+            if ($toBill > 0) {
+                $alerts[] = ['warn', $toBill . ' returned order' . ($toBill === 1 ? '' : 's') . ' to bill', 'Make and issue the final bill', add_query_arg('stage', 'to_bill', Router::url('statements'))];
+            }
+            $refunds = count(\Canpas\Fleet\Domain\Billing::list($actor, 'refunds'));
+            if ($refunds > 0) {
+                $alerts[] = ['', $refunds . ' deposit' . ($refunds === 1 ? '' : 's') . ' to refund', 'Cancelled or declined orders with a deposit received', add_query_arg('stage', 'refunds', Router::url('statements'))];
+            }
+        }
+        if ($actor->can('cf_assign_fleet')) {
+            $m = \Canpas\Fleet\Domain\Maintenance::alerts();
+            $bad = count(array_filter($m, static fn($a) => $a['tone'] === 'bad'));
+            if ($m !== []) {
+                $alerts[] = [$bad ? 'bad' : 'warn', count($m) . ' maintenance item' . (count($m) === 1 ? '' : 's') . ' need attention', $bad ? $bad . ' expired or overdue' : 'Renewals or services coming up', Router::url('maintenance')];
+            }
+        }
         $docs = \Canpas\Fleet\Domain\Documents::counts()['pending'];
         if ($docs > 0 && $actor->can('cf_view_documents')) {
             $alerts[] = ['', $docs . ' document' . ($docs === 1 ? '' : 's') . ' to check', 'IDs and licences uploaded by customers', Router::url('documents')];
@@ -93,7 +110,7 @@ final class Dashboard
             . Ui::card('Needs attention', $alertHtml)
             . Ui::card('Fleet status', Ui::table(['Plate', 'Type', 'Status'], $fleetRows, 'No trucks added yet.'), '<a href="' . esc_url(Router::url('trucks')) . '" class="small">View all</a>')
             . '</div>'
-            . '<p class="muted small" style="margin-top:16px">Utilisation, revenue and fuel reports join this dashboard with billing (milestone 5).</p>';
+            . '<p class="muted small" style="margin-top:16px">Revenue, utilisation, fuel and profit are on the Reports page.</p>';
 
         $first = explode(' ', trim(wp_get_current_user()->display_name))[0] ?? '';
         $actions = $actor->can('cf_manage_fleet') ? '<a class="btn" href="' . esc_url(Router::url('trucks')) . '">Trucks</a>' : '';

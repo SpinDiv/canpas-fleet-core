@@ -59,6 +59,30 @@ final class Pdf
         $this->space($after);
     }
 
+    /**
+     * One row of columns. Each column: [text, x from the left margin in pt, width in pt, 'L'|'R'].
+     * Text that does not fit is shortened with "...".
+     *
+     * @param list<array{0:string,1:float,2:float,3:string}> $cols
+     */
+    public function row(array $cols, float $size = 9.5, bool $bold = false): void
+    {
+        $lead = $size * 1.5;
+        $this->ensure($lead);
+        $this->y -= $lead;
+        foreach ($cols as [$text, $x, $w, $align]) {
+            $t = $this->encode($text);
+            while ($t !== '' && $this->width($t, $size, $bold) > $w) {
+                $t = rtrim(substr($t, 0, -4)) . '...';
+                if (strlen($t) <= 3) {
+                    break;
+                }
+            }
+            $left = self::M + $x + ($align === 'R' ? $w - $this->width($t, $size, $bold) : 0);
+            $this->pages[count($this->pages) - 1] .= sprintf("BT /%s %.1F Tf %.2F %.2F Td (%s) Tj ET\n", $bold ? 'F2' : 'F1', $size, $left, $this->y, $this->escape($t));
+        }
+    }
+
     public function space(float $pt): void
     {
         $this->y -= $pt;

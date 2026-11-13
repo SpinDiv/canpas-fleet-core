@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0 — 2026-11-13
+
+Milestone 5: closing orders and the money.
+
+- Final bill, worked out when an order is returned, always at the rates copied onto the order at booking: the booked price; a kilometre adjustment when the odometer differs from the quote by more than the allowed margin (Settings, default 5%); late return days (truck daily rate, or equipment re-priced for the longer period); fuel shortfall × fuel price (new setting); damaged pieces × damage fee and missing pieces × replacement cost; tolls and parking logged on the order at cost.
+- Admins can add charges (waiting time, surcharge, cleaning, damage, other) or discounts and remove lines; every change needs a reason, shows on the bill and is audited. Issuing locks the bill, applies the deposit and emails the customer.
+- Settlement: the customer pays the balance with proof (or the office records cash or a transfer), and the office records refunds of any deposit left over. When both are done the bill is settled and the order closed. Deposits on cancelled or declined orders are refunded with a reason.
+- Bill PDF (billing statement, not an official receipt). Statements page for the office (to bill, awaiting settlement, deposits to refund, settled, and each company's statement) and My statements for customer admins, with a running balance.
+- Maintenance: log services, repairs, tyres, registration, insurance and inspections with cost and receipt; the next service is set from the odometer and the interval (new setting); renewals move the expiry dates; a repair can put a truck or unit back in service. Alerts for expired or expiring registration, insurance and inspections, services due, and anything in repair, also on the dashboard.
+- Reports with CSV export: revenue by month and by customer, trucks (days out, utilisation, km, fuel, km per litre, other costs, maintenance, revenue less costs), equipment revenue by item, fuel and expenses, overdue returns.
+- Migration `0006_billing`. Self-test adds checks for every bill rule, locking, settlement, refunds, statements, maintenance and reports.
+
 ## 0.5.0 — 2026-11-13
 
 Milestone 4: running the fleet.

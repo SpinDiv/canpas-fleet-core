@@ -29,6 +29,8 @@ final class Settings
         'payment_instructions' => ['Payment instructions (bank, GCash)', 'textarea', '', null, null],
         'notify_email' => ['Email for new sign-ups and alerts', 'email', '', null, null],
         'document_retention_days' => ['Delete customer IDs after (days)', 'int', 1095, 30, 3650],
+        'fuel_price_per_liter' => ['Fuel price for shortfalls (₱ per litre)', 'float', 0, 0, 500],
+        'service_interval_km' => ['Truck service every (km)', 'int', 10000, 1000, 100000],
     ];
 
     /** @return array<string, mixed> */

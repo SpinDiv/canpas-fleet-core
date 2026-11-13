@@ -15,7 +15,8 @@ final class SettingsScreen
     private const GROUPS = [
         'Yard' => ['yard_address', 'yard_lat', 'yard_lng'],
         'Bookings and billing' => ['hold_hours', 'km_tolerance_pct', 'driver_km_basis', 'trips_per_rental', 'delivery_truck_type'],
-        'Payments' => ['payment_instructions'],
+        'Payments' => ['payment_instructions', 'fuel_price_per_liter'],
+        'Fleet' => ['service_interval_km'],
         'Notifications and privacy' => ['notify_email', 'document_retention_days'],
     ];
 
