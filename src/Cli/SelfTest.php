@@ -215,6 +215,7 @@ final class SelfTest
             self::expect('Sign-up needs the business structure', 'invalid_input', static fn() => Companies::signup(['structure' => ''] + $form('z'), $file($png)));
             self::expect('Declining needs a reason', 'reason_required', static fn() => Companies::decline($admin, $s2['company_id'], ''));
             Companies::decline($admin, $s2['company_id'], 'Permit is not readable');
+            self::check('A declined sign-up is not listed as waiting for a profile review', !in_array($s2['company_id'], array_column(CompanyProfile::pendingCompanies(), 'id'), true) && (string) Db::value(Db::prepare('SELECT status FROM ' . Db::t('company_documents') . ' WHERE company_id = UNHEX(%s)', $s2['company_id'])) === 'rejected');
             self::expect('A declined company login cannot use the portal', 'no_membership', static fn() => Actor::forUser($s2['user_id']));
 
             // Suspension.
@@ -979,7 +980,15 @@ final class SelfTest
             self::check('Approving a new permit replaces the old one', (string) Db::value(Db::prepare('SELECT status FROM ' . Db::t('company_documents') . ' WHERE id = UNHEX(%s)', $permit)) === 'replaced' && CompanyProfile::quoteReady($A)['ok']);
             Db::update('company_documents', ['expires_on' => Db::todayManila()->format('Y-m-d')], ['id' => $permit2], ['id']);
             self::check('A permit expiring today blocks quotations', !CompanyProfile::quoteReady($A)['ok'] && in_array('Business permit', CompanyProfile::quoteReady($A)['missing'], true));
+            Db::update('company_documents', ['expires_on' => null], ['id' => $permit2], ['id']);
+            $legacy = array_values(array_filter(CompanyProfile::documents($admin, $A), static fn($d) => $d['id'] === $permit2));
+            self::check('An approved permit with no expiry date shows as needing a current permit', ($legacy[0]['state'] ?? '') === 'no_expiry' && !CompanyProfile::quoteReady($A)['ok'], (string) ($legacy[0]['state'] ?? ''));
             Db::update('company_documents', ['expires_on' => $future], ['id' => $permit2], ['id']);
+            $permit3 = CompanyProfile::uploadDocument($custA, 'permit', $future, $png());
+            Db::update('company_documents', ['expires_on' => Db::todayManila()->format('Y-m-d')], ['id' => $permit3], ['id']);
+            self::expect('A document that has expired by review time cannot be approved', 'document_expired', static fn() => CompanyProfile::reviewDocument($admin, $permit3, true));
+            self::check('The valid permit stays approved when an expired one is refused', (string) Db::value(Db::prepare('SELECT status FROM ' . Db::t('company_documents') . ' WHERE id = UNHEX(%s)', $permit2)) === 'approved');
+            CompanyProfile::reviewDocument($admin, $permit3, false, 'Expired before review');
             $chs = CompanyProfile::requestChange($custA, ['structure' => 'corporation']);
             CompanyProfile::reviewChange($admin, $chs, true);
             self::check('A corporation needs SEC registration, not DTI', !CompanyProfile::quoteReady($A)['ok'] && CompanyProfile::quoteReady($A)['missing'] === ['SEC registration'], implode(',', CompanyProfile::quoteReady($A)['missing']));
