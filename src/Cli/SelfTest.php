@@ -32,6 +32,7 @@ use Canpas\Fleet\Support\Db;
 use Canpas\Fleet\Support\DomainError;
 use Canpas\Fleet\Support\Files;
 use Canpas\Fleet\Support\Mail;
+use Canpas\Fleet\Support\PayInfo;
 use Canpas\Fleet\Support\Sequence;
 use Canpas\Fleet\Support\Uuid;
 use Canpas\Fleet\Tenancy\Accounts;
@@ -988,6 +989,18 @@ final class SelfTest
             self::check('The quotation PDF has the letterhead, both rates and the validity',
                 str_starts_with($qpdf, '%PDF-1.4') && str_contains($qpdf, 'QUOTATION') && str_contains($qpdf, $o1['ref'] . ' / Q2') && str_contains($qpdf, 'Valid until') && str_contains($qpdf, '/Subtype /Image') && str_contains($qpdf, '127.50') && str_contains($qpdf, '150.00'),
                 strlen($qpdf) . ' bytes');
+            self::check('The quotation PDF shows how to pay (bank, GCash and Maya placeholders)',
+                str_contains($qpdf, 'HOW TO PAY') && str_contains($qpdf, '0000-0000-0000') && str_contains($qpdf, '0917 000 0000') && str_contains($qpdf, '0918 000 0000'));
+            $offerMail = implode("\n", array_map(static fn($m) => (string) ($m['message'] ?? ''), $sent));
+            self::check('The quotation email includes the payment details', str_contains($offerMail, 'How to pay') && str_contains($offerMail, '0000-0000-0000'));
+            $png = tempnam(sys_get_temp_dir(), 'cfq') . '.png';
+            file_put_contents($png, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));
+            $mayaPay = Payments::submit($custA, $q1, ['amount' => '100', 'method' => 'maya', 'reference' => $o1['ref']], ['name' => 'p.png', 'tmp_name' => $png, 'size' => filesize($png), 'error' => UPLOAD_ERR_OK]);
+            @unlink($png);
+            self::check('A Maya payment proof can be uploaded and waits for Canpas to check it', (string) Db::value(Db::prepare('SELECT CONCAT(method, \'/\', status) FROM ' . Db::t('payments') . ' WHERE id = UNHEX(%s)', $mayaPay)) === 'maya/pending');
+            Settings::save($admin, ['pay_maya_no' => '']);
+            $labels = array_column(PayInfo::lines(), 0);
+            self::check('A payment account left empty is not shown', !in_array('Maya', $labels, true) && in_array('GCash', $labels, true), implode(',', $labels));
             $views = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('file_views') . ' WHERE object_type = %s AND object_id = UNHEX(%s)', 'quote', $q1));
             self::check('Opening the quotation PDF is logged', $views === 1, "{$views} views");
             self::expect('Another company cannot open the quotation PDF', 'not_found', static fn() => Quotes::pdf($userB, $q1, 2));
