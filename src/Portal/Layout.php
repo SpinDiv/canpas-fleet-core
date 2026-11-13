@@ -50,7 +50,8 @@ final class Layout
         $search = Nav::icon('search', 16);
         $out = Nav::icon('logout');
         $home = esc_url(Router::url());
-        $burger = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
+        $burger = '<svg class="ic-open" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>'
+            . '<svg class="ic-close" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
         $chrome = <<<HTML
 <a class="skip" href="#main">Skip to main content</a>
@@ -251,6 +252,7 @@ input.qty{width:96px;height:36px;padding:0 10px;border:1px solid var(--line-2);b
   .mbar .avatar{width:32px;height:32px;font-size:12px;margin-right:4px;color:var(--navy)}.mwho .avatar{color:var(--navy)}
   .icon-btn{width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:0;background:transparent;color:#fff;border-radius:8px;cursor:pointer}
   .icon-btn:hover,.icon-btn[aria-expanded=true]{background:rgba(255,255,255,.10)}
+  .icon-btn .ic-close,.icon-btn[aria-expanded=true] .ic-open{display:none}.icon-btn[aria-expanded=true] .ic-close{display:block}
   .side{display:flex;position:fixed;top:56px;left:0;bottom:0;width:50%;z-index:59;overflow-y:auto;padding:12px 8px 24px;
     transform:translateX(-100%);visibility:hidden;transition:transform .25s ease,visibility 0s linear .25s;box-shadow:4px 0 24px rgba(0,0,0,.25)}
   .nav-open .side{transform:none;visibility:visible;transition:transform .25s ease,visibility 0s}

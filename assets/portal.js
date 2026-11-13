@@ -227,6 +227,12 @@
     document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') setMenu(false); });
     document.querySelectorAll('#side-nav a').forEach(function (a) { a.addEventListener('click', function () { setMenu(false); }); });
     document.querySelectorAll('[data-menu-close]').forEach(function (el) { el.addEventListener('click', function () { setMenu(false); }); });
+    // A tap anywhere outside the menu (including the top bar) closes it.
+    document.addEventListener('click', function (ev) {
+      if (!document.documentElement.classList.contains('nav-open')) return;
+      if (ev.target.closest('#side-nav') || ev.target.closest('[data-menu-toggle]')) return;
+      setMenu(false);
+    });
     window.addEventListener('resize', function () { if (window.innerWidth > 820) setMenu(false); });
   }
 
