@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Canpas\Fleet\Cli;
 
 use Canpas\Fleet\Audit\Audit;
+use Canpas\Fleet\Domain\Account;
 use Canpas\Fleet\Domain\Agreements;
 use Canpas\Fleet\Domain\Billing;
 use Canpas\Fleet\Domain\Catalog;
@@ -101,7 +102,26 @@ final class SelfTest
                 Nav::home($dispatcher) . '/' . Nav::home($driver) . '/' . Nav::home($userB));
             self::check('Customers cannot open staff pages', !Nav::canOpen($userB, 'orders') && !Nav::canOpen($custA, 'approvals'));
             $menuSlugs = array_merge(...array_map(static fn($g) => array_column($g['items'], 'slug'), Nav::menu($driver)));
-            self::check('Driver menu shows only driver pages', $menuSlugs === ['today', 'expenses'], implode(',', $menuSlugs));
+            self::check('Driver menu shows only driver pages', $menuSlugs === ['today', 'expenses', 'account'], implode(',', $menuSlugs));
+
+            // Phone tab bar for small roles, and the Account page.
+            $admin = $mk('admin', Roles::ADMIN, null);
+            $yard = $mk('yard', Roles::YARD, null);
+            $tabs = static fn(Actor $a): array => array_column(Nav::tabs($a), 'slug');
+            self::check('Driver gets bottom tabs Today, Expenses, Account', $tabs($driver) === ['today', 'expenses', 'account'], implode(',', $tabs($driver)));
+            self::check('Yard checker gets bottom tabs Loadings, Returns, Account', $tabs($yard) === ['loadings', 'returns', 'account'], implode(',', $tabs($yard)));
+            self::check('Admin, dispatcher and customers keep the side menu',
+                $tabs($admin) === [] && $tabs($dispatcher) === [] && $tabs($custA) === [] && $tabs($userB) === []);
+            self::check('Every role can open Account', array_reduce([$admin, $dispatcher, $driver, $yard, $custA, $userB],
+                static fn(bool $ok, Actor $a): bool => $ok && Nav::canOpen($a, 'account'), true));
+            wp_set_password('OldPass-123', $driver->userId);
+            self::expect('Wrong current password is refused', 'wrong_password', static fn() => Account::changePassword($driver, 'nope-nope-1', 'NewPass-123', 'NewPass-123'));
+            self::expect('New passwords that do not match are refused', 'password_mismatch', static fn() => Account::changePassword($driver, 'OldPass-123', 'NewPass-123', 'NewPass-124'));
+            self::expect('A password under 8 characters is refused', 'weak_password', static fn() => Account::changePassword($driver, 'OldPass-123', 'short7!', 'short7!'));
+            Account::changePassword($driver, 'OldPass-123', 'NewPass-123', 'NewPass-123');
+            $hash = (string) get_userdata($driver->userId)->user_pass;
+            $pwAudit = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('audit_log') . ' WHERE actor_user_id = %d AND action = %s', $driver->userId, 'password_changed'));
+            self::check('A valid password change works and is audited', wp_check_password('NewPass-123', $hash, $driver->userId) && $pwAudit === 1, "{$pwAudit} audit rows");
 
             // Reference numbers.
             $prefix = 'T' . strtoupper(substr($sfx, 0, 3));
@@ -119,7 +139,6 @@ final class SelfTest
             // Database errors are never silent.
             self::expectThrows('A failed query throws instead of returning false', static fn() => Db::exec('SELECT * FROM ' . Db::t('no_such_table')));
 
-            $admin = $mk('admin', Roles::ADMIN, null);
             self::milestone1($sfx, $admin, $dispatcher, $mk, $users, $companies);
             self::milestone2($sfx, $admin, $dispatcher, $custA, $userB, $suspended);
             self::milestone3($sfx, $admin, $dispatcher, $custA, $userB);
