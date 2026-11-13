@@ -38,7 +38,19 @@ final class Orders
         'cancelled' => 'Cancelled',
         'declined' => 'Declined',
         'expired' => 'Hold expired',
+        'quote_requested' => 'Quotation requested',
+        'quoted' => 'Quotation sent',
+        'quote_declined' => 'Quotation declined',
+        'quote_expired' => 'Quotation expired',
     ];
+
+    /**
+     * Statuses that reserve trucks and stock in the availability check: ACTIVE plus a sent quotation
+     * while it is valid. Kept apart from ACTIVE, which also drives dispatch, yard lists and reports.
+     */
+    public const HOLDING = ['requested', 'submitted', 'needs_fix', 'confirmed', 'dispatched', 'on_site', 'returning', 'quoted'];
+
+    public const QUOTE_STATUSES = ['quote_requested', 'quoted', 'quote_declined', 'quote_expired'];
 
     public const MAX_DAYS = 365;
 
@@ -121,26 +133,34 @@ final class Orders
     /** @param array<string, mixed> $in */
     public static function bookTruck(Actor $actor, array $in): string
     {
-        return self::book($actor, self::quoteTruck($actor, $in));
+        return self::insertOrder($actor, self::quoteTruck($actor, $in), 'requested');
     }
 
     /** @param array<string, mixed> $in */
     public static function bookEquipment(Actor $actor, array $in): string
     {
-        return self::book($actor, self::quoteEquipment($actor, $in));
+        return self::insertOrder($actor, self::quoteEquipment($actor, $in), 'requested');
     }
 
-    /** @param array<string, mixed> $d */
-    private static function book(Actor $actor, array $d): string
+    /**
+     * Save a priced draft as an order. 'requested' checks availability and holds; 'quote_requested'
+     * (a quotation request) holds nothing yet. $after runs inside the same transaction with the new id.
+     *
+     * @param array<string, mixed> $d
+     */
+    public static function insertOrder(Actor $actor, array $d, string $status, ?callable $after = null): string
     {
+        if (!in_array($status, ['requested', 'quote_requested'], true)) {
+            throw new \LogicException('insertOrder: unsupported status');
+        }
         $actor->require('cf_book');
         $companyId = (string) $actor->companyId;
         if ($companyId === '') {
             throw new DomainError('forbidden', 'Only customer accounts can place orders.');
         }
-        return Db::transaction(static function () use ($actor, $d, $companyId): string {
+        return Db::transaction(static function () use ($actor, $d, $companyId, $status, $after): string {
             // Lock what is being booked, then check what is left for these dates.
-            foreach ($d['lines'] as $l) {
+            foreach ($status === 'requested' ? $d['lines'] : [] as $l) {
                 if ($l['line_type'] === 'truck') {
                     Db::value(Db::prepare('SELECT id FROM ' . Db::t('truck_types') . ' WHERE id = UNHEX(%s) FOR UPDATE', $l['truck_type_id']));
                     $free = self::truckTypeCapacity($l['truck_type_id']) - self::peakBooked('truck_type_id', $l['truck_type_id'], $d['start'], $d['end'], 'truck');
@@ -160,13 +180,13 @@ final class Orders
             $hold = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->modify('+' . (int) Settings::get('hold_hours') . ' hours')->format('Y-m-d H:i:s.u');
             Db::insert('orders', [
                 'id' => $id, 'ref' => $ref, 'company_id' => $companyId, 'created_by' => $actor->userId,
-                'kind' => $d['kind'], 'status' => 'requested',
+                'kind' => $d['kind'], 'status' => $status,
                 'start_date' => $d['start'], 'end_date' => $d['end'], 'days' => $d['days'],
                 'fulfilment' => $d['fulfilment'], 'needs_driver' => $d['needs_driver'] ? 1 : 0, 'license_required' => $d['license_required'] ? 1 : 0,
                 'site_address' => $d['site_address'], 'site_lat' => $d['site_lat'], 'site_lng' => $d['site_lng'],
                 'distance_km' => $d['distance_km'], 'distance_source' => $d['distance_source'],
                 'subtotal' => $d['subtotal'], 'deposit_amount' => $d['deposit'], 'total' => $d['total'],
-                'hold_expires_at' => $hold, 'notes' => $d['notes'], 'created_at' => Db::now(),
+                'hold_expires_at' => $status === 'requested' ? $hold : null, 'notes' => $d['notes'], 'created_at' => Db::now(),
             ], ['id', 'company_id']);
             foreach ($d['lines'] as $i => $l) {
                 Db::insert('order_lines', [
@@ -178,7 +198,10 @@ final class Orders
                     'sort' => $i, 'created_at' => Db::now(),
                 ], ['id', 'order_id', 'truck_type_id', 'item_id']);
             }
-            Audit::log($companyId, $actor->userId, 'order.create', 'order', $id, ['ref' => $ref, 'total' => $d['total'], 'kind' => $d['kind']]);
+            Audit::log($companyId, $actor->userId, 'order.create', 'order', $id, ['ref' => $ref, 'total' => $d['total'], 'kind' => $d['kind'], 'status' => $status]);
+            if ($after !== null) {
+                $after($id, $ref);
+            }
             return $id;
         });
     }
@@ -213,6 +236,8 @@ final class Orders
     /** Mark held orders past their hold time as expired. Runs hourly; safe to run any time. */
     public static function expireHolds(): int
     {
+        // Accepted quotations go back to "Quotation sent" if their items are still free (Quotes decides).
+        Quotes::reofferExpiredHolds();
         return Db::exec(Db::prepare(
             'UPDATE ' . Db::t('orders') . ' SET status = %s, status_reason = %s, status_changed_at = %s, updated_at = %s WHERE status = %s AND hold_expires_at < %s',
             'expired', 'Requirements were not completed in time', Db::now(), Db::now(), 'requested', Db::now()
@@ -301,10 +326,11 @@ final class Orders
         $rows = Db::rows(Db::prepare(
             'SELECT o.start_date, o.end_date, l.qty FROM ' . Db::t('order_lines') . ' l JOIN ' . Db::t('orders') . ' o ON o.id = l.order_id
              WHERE l.' . ($column === 'truck_type_id' ? 'truck_type_id' : 'item_id') . ' = UNHEX(%s) AND l.line_type = %s
-               AND o.status IN (' . implode(',', array_fill(0, count(self::ACTIVE), '%s')) . ')
+               AND o.status IN (' . implode(',', array_fill(0, count(self::HOLDING), '%s')) . ')
                AND NOT (o.status = \'requested\' AND o.hold_expires_at < %s)
+               AND NOT (o.status = \'quoted\' AND (o.quote_valid_until IS NULL OR o.quote_valid_until < %s))
                AND o.start_date <= %s AND o.end_date >= %s' . ($excludeOrder ? ' AND o.id <> UNHEX(%s)' : ''),
-            ...array_merge([$id, $lineType], self::ACTIVE, [Db::now(), $end, $start], $excludeOrder ? [$excludeOrder] : [])
+            ...array_merge([$id, $lineType], self::HOLDING, [Db::now(), Db::now(), $end, $start], $excludeOrder ? [$excludeOrder] : [])
         ));
         if ($rows === []) {
             return 0;

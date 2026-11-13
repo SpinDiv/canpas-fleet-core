@@ -189,6 +189,25 @@ final class Companies
     }
 
     /** @return list<array<string, mixed>> */
+    /** The Canpas admin lets a company request special-rate quotations (or stops it). */
+    public static function setSpecialRates(Actor $actor, string $companyId, bool $on): void
+    {
+        $actor->require('cf_manage_rates');
+        $companyId = Uuid::assertHex($companyId, 'company');
+        Db::transaction(static function () use ($actor, $companyId, $on): void {
+            if (Db::update('companies', ['special_rates' => $on ? 1 : 0], ['id' => $companyId], ['id']) === 0
+                && Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('companies') . ' WHERE id = UNHEX(%s)', $companyId)) == 0) {
+                throw new DomainError('not_found', 'Company not found.');
+            }
+            Audit::log($companyId, $actor->userId, 'company.special_rates', 'company', $companyId, ['on' => $on ? 1 : 0]);
+        });
+    }
+
+    public static function specialRates(string $companyId): bool
+    {
+        return (int) Db::value(Db::prepare('SELECT special_rates FROM ' . Db::t('companies') . ' WHERE id = UNHEX(%s)', $companyId)) === 1;
+    }
+
     public static function list(Actor $actor, ?string $status = null): array
     {
         $actor->require('cf_manage_companies');
