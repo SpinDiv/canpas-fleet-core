@@ -55,8 +55,20 @@ final class Companies
         if (Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('companies') . ' WHERE name = %s', $name)) > 0) {
             throw new DomainError('company_exists', 'This company already has an account. Ask your company admin to add you.', ['field' => 'company_name']);
         }
+        $structure = (string) ($in['structure'] ?? '');
+        if (!isset(CompanyProfile::STRUCTURES[$structure])) {
+            throw new DomainError('invalid_input', 'Choose your business structure.', ['field' => 'structure']);
+        }
+        $permitExpires = trim((string) ($in['permit_expires'] ?? ''));
+        $pe = \DateTimeImmutable::createFromFormat('!Y-m-d', $permitExpires);
+        if ($pe === false || $pe->format('Y-m-d') !== $permitExpires) {
+            throw new DomainError('invalid_input', 'Enter the date your business permit expires.', ['field' => 'permit_expires']);
+        }
+        if ($permitExpires <= Db::todayManila()->format('Y-m-d')) {
+            throw new DomainError('document_expired', 'This business permit has expired. Attach the current one.', ['field' => 'permit_expires']);
+        }
         if ($permit === null) {
-            throw new DomainError('file_missing', 'Attach your business permit or DTI/SEC registration.', ['field' => 'permit']);
+            throw new DomainError('file_missing', 'Attach your business permit.', ['field' => 'permit']);
         }
 
         $companyId = Uuid::v7();
@@ -74,9 +86,9 @@ final class Companies
             if ($userId <= 0) {
                 throw new DomainError('user_create_failed', 'The account could not be created. Please try again.');
             }
-            Db::transaction(static function () use ($companyId, $name, $tin, $address, $contact, $email, $phone, $file, $userId): void {
+            Db::transaction(static function () use ($companyId, $name, $tin, $address, $contact, $email, $phone, $file, $userId, $structure, $permitExpires): void {
                 Db::insert('companies', [
-                    'id' => $companyId, 'name' => $name, 'tin' => $tin, 'address' => $address,
+                    'id' => $companyId, 'name' => $name, 'tin' => $tin, 'address' => $address, 'structure' => $structure,
                     'contact_name' => $contact, 'contact_email' => $email, 'contact_phone' => $phone,
                     'status' => 'pending', 'permit_file' => $file['path'], 'permit_name' => $file['name'],
                     'created_by' => $userId, 'created_at' => Db::now(),
@@ -85,6 +97,7 @@ final class Companies
                     'id' => Uuid::v7(), 'user_id' => $userId, 'company_id' => $companyId,
                     'role' => Roles::PENDING, 'status' => 'active', 'created_at' => Db::now(),
                 ], ['id', 'company_id']);
+                CompanyProfile::addSignupPermit($companyId, $userId, $file, $permitExpires);
                 Audit::log($companyId, $userId, 'company.signup', 'company', $companyId);
             });
         } catch (\Throwable $e) {
@@ -130,6 +143,7 @@ final class Companies
                 'UPDATE ' . Db::t('memberships') . ' SET role = %s, updated_at = %s WHERE company_id = UNHEX(%s) AND role = %s',
                 Roles::CUSTOMER_ADMIN, Db::now(), $companyId, Roles::PENDING
             ));
+            CompanyProfile::approveSignupDocuments($actor, $companyId);
             Audit::log($companyId, $actor->userId, 'company.approve', 'company', $companyId);
         });
         foreach ($users as $uid) {

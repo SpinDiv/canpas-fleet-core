@@ -47,6 +47,10 @@ final class Quotes
         if ($actor->companyId === null || !Companies::specialRates($actor->companyId)) {
             throw new DomainError('not_eligible', 'Special-rate quotations are not available for your account. Book at the normal rates or contact Canpas.');
         }
+        $ready = CompanyProfile::quoteReady($actor->companyId);
+        if (!$ready['ok']) {
+            throw new DomainError('documents_missing', 'To request special rates, your company profile needs: ' . implode(', ', $ready['missing']) . ' (approved by Canpas and not expired). Update it in Company profile.', ['missing' => $ready['missing']]);
+        }
         $note = self::text($in['note'] ?? '', 1000);
         if (mb_strlen($note) < 3) {
             throw new DomainError('invalid_input', 'Tell Canpas what rate you are hoping for or why (a short note).', ['field' => 'note']);
