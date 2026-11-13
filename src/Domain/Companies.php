@@ -194,6 +194,9 @@ final class Companies
     {
         $actor->require('cf_manage_rates');
         $companyId = Uuid::assertHex($companyId, 'company');
+        if ($on && Db::value(Db::prepare('SELECT status FROM ' . Db::t('companies') . ' WHERE id = UNHEX(%s)', $companyId)) !== 'approved') {
+            throw new DomainError('wrong_status', 'Only approved companies can be allowed special rates.');
+        }
         Db::transaction(static function () use ($actor, $companyId, $on): void {
             if (Db::update('companies', ['special_rates' => $on ? 1 : 0], ['id' => $companyId], ['id']) === 0
                 && Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('companies') . ' WHERE id = UNHEX(%s)', $companyId)) == 0) {

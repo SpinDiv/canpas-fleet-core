@@ -119,8 +119,14 @@ final class Mail
     }
 
     /** @return list<array{to_email:string, subject:string, kind:string, sent_ok:string, created_at:string}> */
-    public static function forOrder(string $orderId): array
+    public static function forOrder(string $orderId, bool $staff = true): array
     {
-        return Db::rows(Db::prepare('SELECT to_email, subject, kind, sent_ok, created_at FROM ' . Db::t('email_log') . ' WHERE order_id = UNHEX(%s) ORDER BY created_at', $orderId));
+        $rows = Db::rows(Db::prepare('SELECT to_email, subject, kind, sent_ok, created_at FROM ' . Db::t('email_log') . ' WHERE order_id = UNHEX(%s) ORDER BY created_at', $orderId));
+        if ($staff) {
+            return $rows;
+        }
+        // Customers see only what was sent to their own company, not Canpas's internal addresses.
+        $internal = array_map('strtolower', array_filter([(string) Settings::get('notify_email'), (string) Settings::get('records_bcc'), (string) Settings::get('company_email')]));
+        return array_values(array_filter($rows, static fn(array $r): bool => !in_array(strtolower($r['to_email']), $internal, true)));
     }
 }

@@ -99,7 +99,9 @@
     clearErrors(form);
     if (btn) { btn.disabled = true; btn.dataset.label = btn.textContent; btn.textContent = 'Saving…'; }
     // A second submit button can send the same form elsewhere (e.g. "Request a quotation").
-    var endpoint = (ev.submitter && ev.submitter.dataset.submitTo) || form.dataset.endpoint;
+    var via = ev.submitter || form._cfClicked;
+    form._cfClicked = null;
+    var endpoint = (via && via.dataset && via.dataset.submitTo) || form.dataset.endpoint;
     api(endpoint, formBody(form)).then(function (data) {
       if (data.nonce) cfg.nonce = data.nonce;
       done(form.dataset.after, data.message, form, data.redirect);
@@ -152,10 +154,17 @@
     }).finally(function () { b.disabled = false; b.textContent = label; });
   });
 
-  // Changing anything after a quote hides the old price until it is worked out again.
+  // Older browsers have no SubmitEvent.submitter: remember which submit button was clicked.
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('form[data-endpoint] [type=submit]');
+    if (b) b.form._cfClicked = b;
+  }, true);
+
+  // Changing anything after a quote hides the old price until it is worked out again
+  // (the quotation note does not change the price, so it is left out).
   document.addEventListener('input', function (ev) {
     var form = ev.target.closest && ev.target.closest('form[data-endpoint]');
-    if (!form) return;
+    if (!form || ev.target.closest('.quote-ask')) return;
     var box = form.querySelector('.quote-box');
     var book = form.querySelector('[data-needs-quote]');
     if (box && !box.hidden) { box.hidden = true; }

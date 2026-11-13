@@ -39,6 +39,8 @@ final class QuotesScreen
             if ($canPrice) {
                 $html .= self::priceForm($actor, $o);
                 $actions .= Ui::action('Decline request', "orders/{$o['id']}/quote-decline", 'danger', '', 'Why can Canpas not offer a special rate? The customer sees this reason.');
+            } elseif ($actor->isStaff()) {
+                $html .= '<p class="callout info">Waiting for the Canpas admin to price this quotation. The normal price is shown above.</p>';
             } else {
                 $html .= '<p class="callout info">Canpas is preparing your special-rate quotation. You will get an email as soon as it is ready.</p>';
             }
@@ -53,6 +55,9 @@ final class QuotesScreen
                 $html .= '<p><b>Note from Canpas:</b> ' . Ui::e((string) $offer['note']) . '</p>';
             }
             $html .= '<p><a class="btn" href="' . esc_url(add_query_arg(['quote' => $o['id'], 'round' => (int) $offer['round']], Router::url('file'))) . '" target="_blank" rel="noopener">Download quotation (PDF)</a></p>';
+            if ($o['status'] === 'quoted' && $canPrice) {
+                $actions .= Ui::action('Withdraw quotation', "orders/{$o['id']}/quote-decline", 'danger', '', 'Why is Canpas withdrawing this quotation? The customer sees this reason.');
+            }
             if ($o['status'] === 'quoted') {
                 if ($isAdmin) {
                     $accepted = array_filter(Quotes::rounds($actor, $o['id']), static fn($r) => $r['kind'] === 'accept') !== [];
@@ -162,10 +167,10 @@ final class QuotesScreen
     }
 
     /** Emails sent about this order (any order), for the record. */
-    public static function emailsCard(array $o): string
+    public static function emailsCard(Actor $actor, array $o): string
     {
         $items = '';
-        foreach (Mail::forOrder($o['id']) as $m) {
+        foreach (Mail::forOrder($o['id'], $actor->isStaff()) as $m) {
             $items .= '<li><span><b>' . Ui::e($m['subject']) . '</b><br><span class="muted small">To ' . Ui::e($m['to_email']) . ' · ' . Ui::e(Ui::when($m['created_at'])) . '</span></span>'
                 . ($m['sent_ok'] ? Ui::pill('active', 'Sent') : Ui::pill('suspended', 'Not sent')) . '</li>';
         }

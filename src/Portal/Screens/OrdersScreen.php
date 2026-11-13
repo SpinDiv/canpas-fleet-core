@@ -200,14 +200,14 @@ final class OrdersScreen
         if (in_array($o['status'], Orders::QUOTE_STATUSES, true)) {
             // A quotation: the normal price beside the quotation card; no requirements yet.
             $body = '<div class="split">' . Ui::card('Order', $dl) . Ui::card('Normal price', self::breakdown($draft)) . '</div>'
-                . QuotesScreen::card($actor, $o) . QuotesScreen::emailsCard($o);
+                . QuotesScreen::card($actor, $o) . QuotesScreen::emailsCard($actor, $o);
         } else {
             $body = '<div class="split">' . Ui::card('Order', $dl) . Ui::card((int) $o['quote_round'] > 0 ? 'Price (special rates)' : 'Price', self::breakdown($draft)) . '</div>'
                 . QuotesScreen::card($actor, $o)
                 . BillingScreen::card($actor, $o)
                 . OpsScreen::card($actor, $o)
                 . ($showReq ? RequirementsScreen::card($actor, $o) : '')
-                . QuotesScreen::emailsCard($o);
+                . QuotesScreen::emailsCard($actor, $o);
         }
         Layout::page($actor, $page, $o['ref'], $body, $page === 'orders' ? 'Operations / Orders' : 'My account / My orders', $actions);
     }
