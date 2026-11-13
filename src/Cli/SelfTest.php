@@ -10,6 +10,7 @@ use Canpas\Fleet\Domain\Agreements;
 use Canpas\Fleet\Domain\Billing;
 use Canpas\Fleet\Domain\Catalog;
 use Canpas\Fleet\Domain\Companies;
+use Canpas\Fleet\Domain\CompanyProfile;
 use Canpas\Fleet\Domain\Dispatch;
 use Canpas\Fleet\Domain\Distance;
 use Canpas\Fleet\Domain\Documents;
@@ -153,6 +154,7 @@ final class SelfTest
             self::milestone3($sfx, $admin, $dispatcher, $custA, $userB);
             self::milestone4($sfx, $admin, $dispatcher, $custA, $userB, $mk, $users);
             self::milestone5($sfx, $admin, $dispatcher, $custA, $userB);
+            self::milestoneProfile($sfx, $admin, $dispatcher, $custA, $userB, $mk, $users, $companyB);
             self::milestoneQuotes($sfx, $admin, $dispatcher, $custA, $userB, $mk, $users);
         } catch (\Throwable $e) {
             self::check('Self-test ran to completion', false, get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
@@ -178,7 +180,8 @@ final class SelfTest
         $form = static fn(string $who): array => [
             'company_name' => "Signup {$who} {$sfx}", 'tin' => '123-456-789-000', 'address' => 'Imus, Cavite',
             'contact_name' => "Signup {$who}", 'email' => "cftest.signup{$who}.{$sfx}@canpas-demo.example", 'phone' => '09170000000',
-            'password' => 'correct-horse-battery',
+            'password' => 'correct-horse-battery', 'structure' => 'sole_prop',
+            'permit_expires' => Db::todayManila()->modify('+300 days')->format('Y-m-d'),
         ];
         $savedSettings = get_option(Settings::OPTION, null);
         // No real emails during the self-test.
@@ -206,6 +209,9 @@ final class SelfTest
             $approved = Actor::forUser($s1['user_id']);
             self::check('Approval turns the first login into company admin and allows booking',
                 $approved->role === Roles::CUSTOMER_ADMIN && $approved->companyActive() && $approved->can('cf_book'));
+            $permitStatus = Db::value(Db::prepare('SELECT status FROM ' . Db::t('company_documents') . ' WHERE company_id = UNHEX(%s) AND kind = %s', $s1['company_id'], 'permit'));
+            self::check('Approving a company also approves the business permit sent at sign-up', $permitStatus === 'approved', (string) $permitStatus);
+            self::expect('Sign-up needs the business structure', 'invalid_input', static fn() => Companies::signup(['structure' => ''] + $form('z'), $file($png)));
             self::expect('Declining needs a reason', 'reason_required', static fn() => Companies::decline($admin, $s2['company_id'], ''));
             Companies::decline($admin, $s2['company_id'], 'Permit is not readable');
             self::expect('A declined company login cannot use the portal', 'no_membership', static fn() => Actor::forUser($s2['user_id']));
@@ -905,6 +911,93 @@ final class SelfTest
         }
     }
 
+    /** Company profile: contact edits, change approval, registration documents, quotation gate. */
+    private static function milestoneProfile(string $sfx, Actor $admin, Actor $dispatcher, Actor $custA, Actor $userB, callable $mk, array &$users, string $companyB): void
+    {
+        add_filter('pre_wp_mail', '__return_true');
+        $tmp = [];
+        $png = static function () use (&$tmp): array {
+            $p = tempnam(sys_get_temp_dir(), 'cfd') . '.png';
+            file_put_contents($p, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));
+            $tmp[] = $p;
+            return ['name' => 'doc.png', 'tmp_name' => $p, 'size' => filesize($p), 'error' => UPLOAD_ERR_OK];
+        };
+        $future = Db::todayManila()->modify('+200 days')->format('Y-m-d');
+        $A = (string) $custA->companyId;
+        $co = static fn(string $id): array => Db::row(Db::prepare('SELECT name, tin, address, structure, contact_phone, website FROM ' . Db::t('companies') . ' WHERE id = UNHEX(%s)', $id)) ?? [];
+        try {
+            $applied = Db::value(Db::prepare('SELECT status FROM ' . Db::t('migrations') . ' WHERE version = %s', '0008_company_profile'));
+            self::check('Migration 0008_company_profile is applied', $applied === 'applied', (string) $applied);
+            $pUser = $mk('puser', Roles::CUSTOMER_USER, $A);
+            self::expect('A company user cannot change the company profile', 'forbidden', static fn() => CompanyProfile::updateContact($pUser, ['contact_phone' => '09171112222']));
+            self::expect('A website must be a web address', 'invalid_input', static fn() => CompanyProfile::updateContact($custA, ['website' => 'not a url']));
+            CompanyProfile::updateContact($custA, ['contact_name' => 'New Contact', 'contact_phone' => '09171112222', 'contact_email' => "cftest.newcontact.{$sfx}@canpas-demo.example", 'website' => 'https://example.com']);
+            $aud = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('audit_log') . ' WHERE company_id = UNHEX(%s) AND action = %s', $A, 'company.contact_update'));
+            self::check('Contact details change straight away and are audited', $co($A)['contact_phone'] === '09171112222' && $co($A)['website'] === 'https://example.com' && $aud === 1);
+
+            $before = $co($A);
+            $nameB = (string) Db::value(Db::prepare('SELECT name FROM ' . Db::t('companies') . ' WHERE id = UNHEX(%s)', $companyB));
+            self::expect('A new name already used by another company is refused', 'company_exists', static fn() => CompanyProfile::requestChange($custA, ['name' => $nameB]));
+            $ch = CompanyProfile::requestChange($custA, ['name' => "Selftest A Renamed {$sfx}", 'tin' => '999-888-777-000', 'structure' => 'sole_prop']);
+            self::check('Legal changes wait for Canpas and do not change the company yet', $co($A)['name'] === $before['name'] && $co($A)['tin'] === $before['tin']);
+            self::expect('Only one change request can wait at a time', 'change_pending', static fn() => CompanyProfile::requestChange($custA, ['address' => 'Dasmarinas, Cavite']));
+            self::expect('A dispatcher cannot approve company changes', 'forbidden', static fn() => CompanyProfile::reviewChange($dispatcher, $ch, true));
+            self::expect('Rejecting a change needs a reason', 'reason_required', static fn() => CompanyProfile::reviewChange($admin, $ch, false, ''));
+            CompanyProfile::reviewChange($admin, $ch, true);
+            $after = $co($A);
+            self::check('An approved change updates the company', $after['name'] === "Selftest A Renamed {$sfx}" && $after['tin'] === '999-888-777-000' && $after['structure'] === 'sole_prop');
+            $ch2 = CompanyProfile::requestChange($custA, ['address' => 'Dasmarinas, Cavite']);
+            CompanyProfile::cancelChange($custA, $ch2);
+            self::check('A waiting change can be cancelled', (string) Db::value(Db::prepare('SELECT status FROM ' . Db::t('company_changes') . ' WHERE id = UNHEX(%s)', $ch2)) === 'cancelled');
+
+            // Documents.
+            self::expect('A business permit needs its expiry date', 'invalid_input', static fn() => CompanyProfile::uploadDocument($custA, 'permit', '', $png()));
+            self::expect('An expired business permit is refused', 'document_expired', static fn() => CompanyProfile::uploadDocument($custA, 'permit', Db::todayManila()->modify('-1 day')->format('Y-m-d'), $png()));
+            self::expect('A business permit needs the file', 'file_missing', static fn() => CompanyProfile::uploadDocument($custA, 'permit', $future, null));
+            self::expect('A company user cannot upload company documents', 'forbidden', static fn() => CompanyProfile::uploadDocument($pUser, 'permit', $future, $png()));
+            Companies::setSpecialRates($admin, $A, true);
+            $permit = CompanyProfile::uploadDocument($custA, 'permit', $future, $png());
+            $dti = CompanyProfile::uploadDocument($custA, 'dti', $future, $png());
+            self::check('Uploaded documents wait for Canpas', (string) Db::value(Db::prepare('SELECT status FROM ' . Db::t('company_documents') . ' WHERE id = UNHEX(%s)', $permit)) === 'pending');
+            self::expect('Quotations are refused until the documents are approved', 'documents_missing', static fn() => Quotes::request($custA, 'equipment', ['note' => 'x y z']));
+            self::expect('A dispatcher cannot approve documents', 'forbidden', static fn() => CompanyProfile::reviewDocument($dispatcher, $permit, true));
+            self::expect('Rejecting a document needs a reason', 'reason_required', static fn() => CompanyProfile::reviewDocument($admin, $dti, false, ''));
+            CompanyProfile::reviewDocument($admin, $permit, true);
+            CompanyProfile::reviewDocument($admin, $dti, true);
+            self::check('With an approved permit and DTI a sole proprietor can request quotations', CompanyProfile::quoteReady($A)['ok'] === true, implode(',', CompanyProfile::quoteReady($A)['missing']));
+            $permit2 = CompanyProfile::uploadDocument($custA, 'permit', Db::todayManila()->modify('+360 days')->format('Y-m-d'), $png());
+            CompanyProfile::reviewDocument($admin, $permit2, true);
+            self::check('Approving a new permit replaces the old one', (string) Db::value(Db::prepare('SELECT status FROM ' . Db::t('company_documents') . ' WHERE id = UNHEX(%s)', $permit)) === 'replaced' && CompanyProfile::quoteReady($A)['ok']);
+            Db::update('company_documents', ['expires_on' => Db::todayManila()->format('Y-m-d')], ['id' => $permit2], ['id']);
+            self::check('A permit expiring today blocks quotations', !CompanyProfile::quoteReady($A)['ok'] && in_array('Business permit', CompanyProfile::quoteReady($A)['missing'], true));
+            Db::update('company_documents', ['expires_on' => $future], ['id' => $permit2], ['id']);
+            $chs = CompanyProfile::requestChange($custA, ['structure' => 'corporation']);
+            CompanyProfile::reviewChange($admin, $chs, true);
+            self::check('A corporation needs SEC registration, not DTI', !CompanyProfile::quoteReady($A)['ok'] && CompanyProfile::quoteReady($A)['missing'] === ['SEC registration'], implode(',', CompanyProfile::quoteReady($A)['missing']));
+            $sec = CompanyProfile::uploadDocument($custA, 'sec', '', $png());
+            CompanyProfile::reviewDocument($admin, $sec, true);
+            self::check('With an approved SEC registration the corporation is ready', CompanyProfile::quoteReady($A)['ok']);
+
+            // Files and access.
+            self::expect('Another company cannot open a company document', 'not_found', static fn() => CompanyProfile::file($userB, $sec));
+            CompanyProfile::file($admin, $sec);
+            $views = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('file_views') . ' WHERE object_type = %s AND object_id = UNHEX(%s)', 'company_doc', $sec));
+            self::check('Opening a company document is logged', $views === 1, "{$views} views");
+
+            // Company admins.
+            self::expect('The last company admin cannot step down', 'last_admin', static fn() => CompanyProfile::setRole($custA, $custA->userId, Roles::CUSTOMER_USER));
+            self::expect('A company user cannot change roles', 'forbidden', static fn() => CompanyProfile::setRole($pUser, $pUser->userId, Roles::CUSTOMER_ADMIN));
+            CompanyProfile::setRole($custA, $pUser->userId, Roles::CUSTOMER_ADMIN);
+            self::check('A company admin can make a colleague an admin', Actor::forUser($pUser->userId)->role === Roles::CUSTOMER_ADMIN);
+            CompanyProfile::setRole($custA, $pUser->userId, Roles::CUSTOMER_USER);
+        } finally {
+            foreach ($tmp as $p) {
+                @unlink($p);
+            }
+            remove_filter('pre_wp_mail', '__return_true');
+        }
+    }
+
     /** Special-rate quotations and branded communications. */
     private static function milestoneQuotes(string $sfx, Actor $admin, Actor $dispatcher, Actor $custA, Actor $userB, callable $mk, array &$users): void
     {
@@ -1096,6 +1189,14 @@ final class SelfTest
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('payments') . ' WHERE company_id = UNHEX(%s)', $c));
             foreach (Db::rows(Db::prepare('SELECT agreement_file FROM ' . Db::t('orders') . ' WHERE company_id = UNHEX(%s) AND agreement_file IS NOT NULL', $c)) as $r) {
                 Files::delete($r['agreement_file']);
+            }
+            if (Db::value("SHOW TABLES LIKE '" . Db::t('company_documents') . "'")) {
+                foreach (Db::rows(Db::prepare('SELECT file FROM ' . Db::t('company_documents') . ' WHERE company_id = UNHEX(%s)', $c)) as $r) {
+                    Files::delete($r['file']);
+                }
+                Db::exec(Db::prepare('DELETE FROM ' . Db::t('company_documents') . ' WHERE company_id = UNHEX(%s)', $c));
+                Db::exec(Db::prepare('DELETE FROM ' . Db::t('company_changes') . ' WHERE company_id = UNHEX(%s)', $c));
+                @rmdir($private . 'company/' . $c);
             }
             $orderOf = ' x JOIN ' . Db::t('orders') . ' o ON o.id = x.order_id WHERE o.company_id = UNHEX(%s)';
             foreach (Db::rows(Db::prepare('SELECT x.photos FROM ' . Db::t('trip_events') . $orderOf, $c)) as $r) {
