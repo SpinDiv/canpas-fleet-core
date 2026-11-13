@@ -32,6 +32,13 @@ final class Settings
         'document_retention_days' => ['Delete customer IDs after (days)', 'int', 1095, 30, 3650],
         'fuel_price_per_liter' => ['Fuel price for shortfalls (₱ per litre)', 'float', 0, 0, 500],
         'service_interval_km' => ['Truck service every (km)', 'int', 10000, 1000, 100000],
+        'quote_valid_days' => ['Special-rate quotations are valid for (days)', 'int', 3, 1, 30],
+        'company_legal_name' => ['Registered company name', 'text', 'Canpas Philippines Inc.', null, null],
+        'company_address' => ['Company address', 'textarea', 'Company address, City, Province', null, null],
+        'company_phone' => ['Office phone', 'text', '+63 900 000 0000', null, null],
+        'company_email' => ['Office email (replies go here)', 'email', 'office@canpas.example', null, null],
+        'company_tin' => ['TIN', 'text', '000-000-000-000', null, null],
+        'records_bcc' => ['Send a copy of every client email to (optional)', 'email', '', null, null],
     ];
 
     /** @return array<string, mixed> */
