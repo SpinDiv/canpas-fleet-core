@@ -451,6 +451,7 @@ final class SelfTest
             self::check('Signing saves a PDF with the signature, its version and a SHA-256 that matches the file',
                 str_starts_with($pdf, '%PDF-1.4') && str_contains($pdf, '/DCTDecode') && Agreements::intact($o) && $o['agreement_version_id'] === $active['id'] && $o['signed_name'] === 'Selftest Cust A',
                 strlen($pdf) . ' bytes');
+            self::check('The signed agreement PDF carries the letterhead', str_contains($pdf, 'RENTAL AGREEMENT') && substr_count($pdf, '/Subtype /Image') >= 2 && str_contains($pdf, 'Canpas Philippines Inc.'));
             self::expect('A dispatcher cannot change the agreement text', 'forbidden', static fn() => Agreements::saveVersion($dispatcher, 'X', Agreements::DEFAULT_BODY));
             $newV = Agreements::saveVersion($admin, "Selftest agreement {$sfx}", Agreements::DEFAULT_BODY . "\n\nSelftest clause.");
             self::check('New agreement text becomes the next version; a signed order keeps the version it signed',
@@ -788,6 +789,8 @@ final class SelfTest
             self::check('Once the balance is received the bill is settled and the order closed', Billing::forOrder($t1)['status'] === 'settled' && Orders::row($t1)['status'] === 'closed');
             $pdf = Billing::pdf($custA, $inv);
             self::check('The customer can download the bill as a PDF', str_starts_with($pdf, '%PDF-1.4') && strlen($pdf) > 1500, strlen($pdf) . ' bytes');
+            self::check('The bill PDF carries the letterhead (logo, company, title)',
+                str_contains($pdf, '/Subtype /Image') && str_contains($pdf, 'FINAL BILL') && str_contains($pdf, 'Canpas Philippines Inc.') && str_contains($pdf, 'Page 1 of'));
             self::expect('Another company cannot open the bill', 'not_found', static fn() => Billing::pdf($userB, $inv));
 
             // Equipment with damage and missing pieces, deposit overpaid → refund.
