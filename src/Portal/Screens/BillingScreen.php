@@ -212,7 +212,10 @@ final class BillingScreen
             ];
         }
         $companies = '';
-        foreach (Companies::list($actor, 'active') as $c) {
+        foreach (Companies::list($actor) as $c) {
+            if ($c['status'] === 'declined' || $c['status'] === 'pending') {
+                continue;
+            }
             $companies .= '<option value="' . esc_attr($c['id']) . '">' . Ui::e($c['name']) . '</option>';
         }
         $picker = '<form class="inline-form" method="get" action="' . esc_url(Router::url('statements')) . '"><div class="field"><label for="st-co">Company statement</label><select id="st-co" name="company">' . $companies . '</select></div><button class="btn" type="submit">Open</button></form>';
