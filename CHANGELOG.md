@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.2 — 2026-11-13
+
+- The Canpas "C" mark is now the browser tab icon on every portal page (sign-in included), with a home-screen icon for phones.
+
 ## 0.7.1 — 2026-11-13
 
 - **Payment accounts in Settings** (bank, GCash, Maya, with a payment note). Placeholders until Canpas fills in the real accounts; an account left empty is not shown. They appear as **How to pay** on the quotation PDF and screen, the quotation and acceptance emails, the deposit and balance forms, and the final bill PDF and email.

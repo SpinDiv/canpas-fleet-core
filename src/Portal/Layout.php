@@ -119,7 +119,10 @@ HTML;
     {
         $titleE = self::esc($title);
         $base = self::css();
-        $icon = esc_url(Plugin::url('assets/logo-color.png'));
+        $v = '?v=' . CANPAS_FLEET_VERSION;
+        $icon = esc_url(Plugin::url('assets/favicon-32.png') . $v);
+        $icon192 = esc_url(Plugin::url('assets/favicon-192.png') . $v);
+        $touch = esc_url(Plugin::url('assets/apple-touch-icon.png') . $v);
         $cfg = wp_json_encode([
             'rest' => esc_url_raw(rest_url('canpas/v1/')),
             'nonce' => is_user_logged_in() ? wp_create_nonce('wp_rest') : '',
@@ -134,7 +137,9 @@ HTML;
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#141D30">
 <title>{$titleE} | Canpas Fleet</title>
-<link rel="icon" href="{$icon}">
+<link rel="icon" type="image/png" sizes="32x32" href="{$icon}">
+<link rel="icon" type="image/png" sizes="192x192" href="{$icon192}">
+<link rel="apple-touch-icon" href="{$touch}">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
 <style>{$base}{$css}</style>
