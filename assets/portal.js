@@ -236,6 +236,30 @@
     window.addEventListener('resize', function () { if (window.innerWidth > 820) setMenu(false); });
   }
 
+  // Tab rows scroll sideways instead of wrapping: arrows and edge fades show when there is more,
+  // and the selected tab is scrolled into view.
+  document.querySelectorAll('.tabs-bar').forEach(function (bar) {
+    var nav = bar.querySelector('.tabs');
+    var update = function () {
+      bar.classList.toggle('can-left', nav.scrollLeft > 2);
+      bar.classList.toggle('can-right', nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 2);
+    };
+    var cur = nav.querySelector('[aria-current=page]');
+    if (cur && cur.offsetLeft + cur.offsetWidth > nav.clientWidth) {
+      nav.style.scrollBehavior = 'auto';
+      nav.scrollLeft = cur.offsetLeft - (nav.clientWidth - cur.offsetWidth) / 2;
+      nav.style.scrollBehavior = '';
+    }
+    bar.querySelectorAll('[data-tabs-scroll]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        nav.scrollBy({ left: Number(btn.dataset.tabsScroll) * nav.clientWidth * 0.7, behavior: 'smooth' });
+      });
+    });
+    nav.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    update();
+  });
+
   try {
     var msg = sessionStorage.getItem('cf-toast');
     if (msg) { sessionStorage.removeItem('cf-toast'); toast(msg); }

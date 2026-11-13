@@ -113,12 +113,19 @@ final class Ui
     /** Tabs as links (?tab=...). @param array<string,string> $tabs key => label */
     public static function tabs(array $tabs, string $active, string $param = 'tab'): string
     {
-        $out = '<nav class="tabs" aria-label="Sections">';
+        $out = '<div class="tabs-bar"><button type="button" class="tabs-arrow prev" data-tabs-scroll="-1" aria-label="Scroll tabs left" tabindex="-1">'
+            . '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>'
+            . '<nav class="tabs" aria-label="Sections">';
         foreach ($tabs as $key => $label) {
             $url = esc_url(add_query_arg([$param => $key, 'edit' => false]));
-            $out .= '<a href="' . $url . '"' . ($key === $active ? ' aria-current="page"' : '') . '>' . self::e($label) . '</a>';
+            // "Label (3)" shows the number as a small count badge.
+            $text = preg_match('/^(.*) \((\d+)\)$/s', $label, $m)
+                ? self::e($m[1]) . '<span class="tab-count">' . self::e($m[2]) . '</span>'
+                : self::e($label);
+            $out .= '<a href="' . $url . '"' . ($key === $active ? ' aria-current="page"' : '') . '>' . $text . '</a>';
         }
-        return $out . '</nav>';
+        return $out . '</nav><button type="button" class="tabs-arrow next" data-tabs-scroll="1" aria-label="Scroll tabs right" tabindex="-1">'
+            . '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button></div>';
     }
 
     /**
