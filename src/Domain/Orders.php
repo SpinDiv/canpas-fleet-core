@@ -236,10 +236,11 @@ final class Orders
     /** Mark held orders past their hold time as expired. Runs hourly; safe to run any time. */
     public static function expireHolds(): int
     {
-        // Accepted quotations go back to "Quotation sent" if their items are still free (Quotes decides).
+        // Accepted quotations are handled only by Quotes (re-offered or expired, with emails); a failed
+        // one is retried next hour rather than silently expired here.
         Quotes::reofferExpiredHolds();
         return Db::exec(Db::prepare(
-            'UPDATE ' . Db::t('orders') . ' SET status = %s, status_reason = %s, status_changed_at = %s, updated_at = %s WHERE status = %s AND hold_expires_at < %s',
+            'UPDATE ' . Db::t('orders') . ' SET status = %s, status_reason = %s, status_changed_at = %s, updated_at = %s WHERE status = %s AND quote_round = 0 AND hold_expires_at < %s',
             'expired', 'Requirements were not completed in time', Db::now(), Db::now(), 'requested', Db::now()
         ));
     }

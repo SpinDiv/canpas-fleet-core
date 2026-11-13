@@ -96,11 +96,15 @@ final class Quotes
         $note = self::text($note, 1000);
         $round = (int) $o['quote_round'] + 1;
         Db::transaction(static function () use ($actor, $o, $c, $note, $round, $valid): void {
+            $cur = self::lockOrder($o['id'], ['quote_requested']);
+            if ((int) $cur['quote_round'] !== $round - 1) {
+                throw new DomainError('wrong_status', 'This quotation was changed a moment ago. Refresh the page.');
+            }
             self::assertFree($o);
-            Db::exec(Db::prepare(
+            self::changed(Db::exec(Db::prepare(
                 'UPDATE ' . Db::t('orders') . ' SET status = %s, quote_round = %d, quote_valid_until = %s, status_changed_by = %d, status_changed_at = %s, updated_at = %s WHERE id = UNHEX(%s) AND status = %s',
                 'quoted', $round, $valid, $actor->userId, Db::now(), Db::now(), $o['id'], 'quote_requested'
-            ));
+            )));
             self::addRound($o['id'], $round, 'offer', $actor->userId, $note, $c['lines'], $c['normal_total'], $c['total'], $c['deposit'], $valid);
             Audit::log($o['company_id'], $actor->userId, 'quote.offer', 'order', $o['id'], ['round' => $round, 'total' => $c['total'], 'normal_total' => $c['normal_total']]);
         });
@@ -138,10 +142,11 @@ final class Quotes
             }
         }
         Db::transaction(static function () use ($actor, $o, $reason): void {
-            Db::exec(Db::prepare(
+            self::lockOrder($o['id'], [$o['status']]);
+            self::changed(Db::exec(Db::prepare(
                 'UPDATE ' . Db::t('orders') . ' SET status = %s, status_reason = %s, status_changed_by = %d, status_changed_at = %s, updated_at = %s WHERE id = UNHEX(%s) AND status = %s',
                 'quote_declined', $reason !== '' ? $reason : 'Declined by the customer', $actor->userId, Db::now(), Db::now(), $o['id'], $o['status']
-            ));
+            )));
             self::addRound($o['id'], (int) $o['quote_round'], 'decline', $actor->userId, $reason, null, 0, 0, 0, null);
             Audit::log($o['company_id'], $actor->userId, 'quote.decline', 'order', $o['id'], ['by' => $actor->isStaff() ? 'staff' : 'customer']);
         });
@@ -176,12 +181,16 @@ final class Quotes
         }
         $hold = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->modify('+' . (int) Settings::get('hold_hours') . ' hours')->format('Y-m-d H:i:s.u');
         Db::transaction(static function () use ($actor, $o, $offer, $hold): void {
+            $cur = self::lockOrder($o['id'], ['quoted']);
+            if ((string) $cur['quote_valid_until'] <= Db::now() || (int) $cur['quote_round'] !== (int) $o['quote_round']) {
+                throw new DomainError('quote_expired', 'This quotation has expired or changed. Refresh the page.');
+            }
             self::assertFree($o);
             self::applyOffer($o, $offer);
-            Db::exec(Db::prepare(
+            self::changed(Db::exec(Db::prepare(
                 'UPDATE ' . Db::t('orders') . ' SET status = %s, hold_expires_at = %s, subtotal = %s, total = %s, deposit_amount = %s, status_changed_by = %d, status_changed_at = %s, updated_at = %s WHERE id = UNHEX(%s) AND status = %s',
                 'requested', $hold, $offer['total'], $offer['total'], $offer['deposit'], $actor->userId, Db::now(), Db::now(), $o['id'], 'quoted'
-            ));
+            )));
             self::addRound($o['id'], (int) $o['quote_round'], 'accept', $actor->userId, '', null, (float) $offer['normal_total'], (float) $offer['total'], (float) $offer['deposit'], null);
             Audit::log($o['company_id'], $actor->userId, 'quote.accept', 'order', $o['id'], ['round' => (int) $o['quote_round'], 'total' => $offer['total']]);
         });
@@ -213,11 +222,17 @@ final class Quotes
         if (mb_strlen($note) < 3) {
             throw new DomainError('invalid_input', 'Tell Canpas what price you are hoping for.', ['field' => 'note']);
         }
+        // A quotation offered again after acceptance keeps the signed agreement and deposit valid only
+        // at the same price, so it can be accepted or declined but not re-negotiated.
+        if ((int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('quote_rounds') . ' WHERE order_id = UNHEX(%s) AND kind = %s', $o['id'], 'accept')) > 0) {
+            throw new DomainError('wrong_status', 'This quotation was already accepted once, so its price is fixed. Accept it again or decline it.');
+        }
         Db::transaction(static function () use ($actor, $o, $note): void {
-            Db::exec(Db::prepare(
+            self::lockOrder($o['id'], ['quoted']);
+            self::changed(Db::exec(Db::prepare(
                 'UPDATE ' . Db::t('orders') . ' SET status = %s, quote_valid_until = NULL, status_changed_by = %d, status_changed_at = %s, updated_at = %s WHERE id = UNHEX(%s) AND status = %s',
                 'quote_requested', $actor->userId, Db::now(), Db::now(), $o['id'], 'quoted'
-            ));
+            )));
             self::addRound($o['id'], (int) $o['quote_round'], 'counter', $actor->userId, $note, null, 0, 0, 0, null);
             Audit::log($o['company_id'], $actor->userId, 'quote.counter', 'order', $o['id'], ['round' => (int) $o['quote_round']]);
         });
@@ -230,13 +245,51 @@ final class Quotes
 
     // ----- Timers (hourly) -----------------------------------------------------------------
 
-    /** Sent quotations past their validity expire and release their items. */
+    /**
+     * Sent quotations past their validity, and requests never priced before their start date,
+     * expire. Each is recorded (history and audit) and the customer admins are emailed.
+     */
     public static function expire(): int
     {
-        return Db::exec(Db::prepare(
-            'UPDATE ' . Db::t('orders') . ' SET status = %s, status_reason = %s, status_changed_at = %s, updated_at = %s WHERE status = %s AND quote_valid_until < %s',
-            'quote_expired', 'The quotation was not accepted in time', Db::now(), Db::now(), 'quoted', Db::now()
-        ));
+        $rows = Db::rows(Db::prepare('SELECT ' . Db::hex('id') . ', status FROM ' . Db::t('orders') . ' WHERE (status = %s AND quote_valid_until < %s) OR (status = %s AND start_date <= %s)',
+            'quoted', Db::now(), 'quote_requested', Db::todayManila()->format('Y-m-d')));
+        $n = 0;
+        foreach ($rows as $r) {
+            try {
+                Db::transaction(static function () use ($r): void {
+                    $cur = self::lockOrder($r['id'], [$r['status']]);
+                    if ($r['status'] === 'quoted' && (string) $cur['quote_valid_until'] >= Db::now()) {
+                        throw new DomainError('wrong_status', 'still valid');
+                    }
+                    self::changed(Db::exec(Db::prepare(
+                        'UPDATE ' . Db::t('orders') . ' SET status = %s, status_reason = %s, status_changed_at = %s, updated_at = %s WHERE id = UNHEX(%s) AND status = %s',
+                        'quote_expired', $r['status'] === 'quoted' ? 'The quotation was not accepted in time' : 'The rental start date passed before a price was sent',
+                        Db::now(), Db::now(), $r['id'], $r['status']
+                    )));
+                    $o = Orders::row($r['id']);
+                    self::addRound($o['id'], (int) $o['quote_round'], 'expired', null, '', null, 0, 0, 0, null);
+                    Audit::log($o['company_id'], 0, 'quote.expired', 'order', $o['id'], ['from' => $r['status']]);
+                });
+            } catch (\Throwable $e) {
+                continue;
+            }
+            $n++;
+            try {
+                $o = Orders::row($r['id']);
+                foreach (self::customerAdmins($o['company_id']) as $email) {
+                    self::mail($email, "Quotation {$o['ref']} has expired", $o, 'quote_expired', [
+                        'title' => 'Quotation expired',
+                        'paragraphs' => [$r['status'] === 'quoted'
+                            ? 'The special-rate quotation ' . $o['ref'] . ' was not accepted before it expired, so the items are no longer held. Request a new quotation if you still need them.'
+                            : 'Canpas could not send a price for ' . $o['ref'] . ' before the rental start date, so the request has closed. Request a new quotation for other dates.'],
+                        'button' => ['label' => 'Open the order', 'href' => self::customerLink($o['id'])],
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                error_log('Canpas quote expiry email failed: ' . $e->getMessage());
+            }
+        }
+        return $n;
     }
 
     /**
@@ -255,7 +308,11 @@ final class Quotes
             $again = false;
             try {
                 Db::transaction(static function () use ($o, $offer, $valid, &$again): void {
-                    $again = $offer !== null && $valid > Db::now() && self::isFree($o);
+                    $cur = self::lockOrder($o['id'], ['requested']);
+                    if ((string) $cur['hold_expires_at'] >= Db::now()) {
+                        throw new DomainError('wrong_status', 'hold still active');
+                    }
+                    $again = $offer !== null && $valid > Db::now() && self::isFree($o, true);
                     if ($again) {
                         Db::exec(Db::prepare(
                             'UPDATE ' . Db::t('orders') . ' SET status = %s, status_reason = NULL, quote_valid_until = %s, status_changed_at = %s, updated_at = %s WHERE id = UNHEX(%s) AND status = %s',
@@ -407,9 +464,9 @@ final class Quotes
     // ----- Pricing internals -------------------------------------------------------------------
 
     /** @return list<array<string, mixed>> order lines with hex ids */
-    public static function lines(string $orderId): array
+    public static function lines(string $orderId, bool $forUpdate = false): array
     {
-        return Db::rows(Db::prepare('SELECT ' . Db::hex('id') . ', ' . Db::hex('truck_type_id') . ', ' . Db::hex('item_id') . ', line_type, description, qty, charged_days, unit_price, amount, deposit, rates_json FROM ' . Db::t('order_lines') . ' WHERE order_id = UNHEX(%s) ORDER BY sort', $orderId));
+        return Db::rows(Db::prepare('SELECT ' . Db::hex('id') . ', ' . Db::hex('truck_type_id') . ', ' . Db::hex('item_id') . ', line_type, description, qty, charged_days, unit_price, amount, deposit, rates_json FROM ' . Db::t('order_lines') . ' WHERE order_id = UNHEX(%s) ORDER BY sort' . ($forUpdate ? ' FOR UPDATE' : ''), $orderId));
     }
 
     /** @return array<string, mixed> the line's normal (catalog-at-booking) rates */
@@ -524,19 +581,25 @@ final class Quotes
 
     private static function isFree(array $o, bool $lock = false): bool
     {
-        foreach (self::lines($o['id']) as $l) {
-            if ($l['line_type'] === 'truck') {
-                if ($lock) {
+        $lines = self::lines($o['id'], $lock);
+        if ($lock) {
+            // Take every lock before the first plain read, so the availability count below sees
+            // bookings committed while we were waiting.
+            foreach ($lines as $l) {
+                if ($l['line_type'] === 'truck') {
                     Db::value(Db::prepare('SELECT id FROM ' . Db::t('truck_types') . ' WHERE id = UNHEX(%s) FOR UPDATE', $l['truck_type_id']));
+                } elseif ($l['line_type'] === 'item') {
+                    Db::value(Db::prepare('SELECT id FROM ' . Db::t('equipment_items') . ' WHERE id = UNHEX(%s) FOR UPDATE', $l['item_id']));
                 }
+            }
+        }
+        foreach ($lines as $l) {
+            if ($l['line_type'] === 'truck') {
                 $free = Orders::truckTypeCapacity($l['truck_type_id']) - Orders::peakBooked('truck_type_id', $l['truck_type_id'], (string) $o['start_date'], (string) $o['end_date'], 'truck', $o['id']);
                 if ($free < 1) {
                     return false;
                 }
             } elseif ($l['line_type'] === 'item') {
-                if ($lock) {
-                    Db::value(Db::prepare('SELECT id FROM ' . Db::t('equipment_items') . ' WHERE id = UNHEX(%s) FOR UPDATE', $l['item_id']));
-                }
                 $free = Orders::itemCapacity($l['item_id']) - Orders::peakBooked('item_id', $l['item_id'], (string) $o['start_date'], (string) $o['end_date'], 'item', $o['id']);
                 if ($free < (int) $l['qty']) {
                     return false;
@@ -547,6 +610,29 @@ final class Quotes
     }
 
     // ----- Small helpers ---------------------------------------------------------------------
+
+    /**
+     * First statement of every quotation transaction: lock the order row (a locking read, so it
+     * also sees changes committed a moment ago) and re-check its status there.
+     *
+     * @param list<string> $statuses
+     * @return array<string, mixed>
+     */
+    private static function lockOrder(string $orderId, array $statuses): array
+    {
+        $row = Db::row(Db::prepare('SELECT status, quote_round, quote_valid_until, hold_expires_at FROM ' . Db::t('orders') . ' WHERE id = UNHEX(%s) FOR UPDATE', $orderId));
+        if ($row === null || !in_array($row['status'], $statuses, true)) {
+            throw new DomainError('wrong_status', 'This quotation was changed a moment ago. Refresh the page.');
+        }
+        return $row;
+    }
+
+    private static function changed(int $rows): void
+    {
+        if ($rows !== 1) {
+            throw new DomainError('wrong_status', 'This quotation was changed a moment ago. Refresh the page.');
+        }
+    }
 
     private static function assertCustomerAdmin(Actor $actor, array $o): void
     {
