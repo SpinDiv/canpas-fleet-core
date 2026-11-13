@@ -133,12 +133,15 @@ final class CompanyProfile
     public static function cancelChange(Actor $actor, string $changeId): void
     {
         $companyId = self::ownCompany($actor);
-        $n = Db::exec(Db::prepare('UPDATE ' . Db::t('company_changes') . ' SET status = %s, reviewed_by = %d, reviewed_at = %s WHERE id = UNHEX(%s) AND company_id = UNHEX(%s) AND status = %s',
-            'cancelled', $actor->userId, Db::now(), Uuid::assertHex($changeId, 'change'), $companyId, 'pending'));
-        if ($n !== 1) {
-            throw new DomainError('not_found', 'That change was not found or is no longer waiting.');
-        }
-        Audit::log($companyId, $actor->userId, 'company.change_cancel', 'company', $companyId, []);
+        $changeId = Uuid::assertHex($changeId, 'change');
+        Db::transaction(static function () use ($actor, $companyId, $changeId): void {
+            $n = Db::exec(Db::prepare('UPDATE ' . Db::t('company_changes') . ' SET status = %s, reviewed_by = %d, reviewed_at = %s WHERE id = UNHEX(%s) AND company_id = UNHEX(%s) AND status = %s',
+                'cancelled', $actor->userId, Db::now(), $changeId, $companyId, 'pending'));
+            if ($n !== 1) {
+                throw new DomainError('not_found', 'That change was not found or is no longer waiting.');
+            }
+            Audit::log($companyId, $actor->userId, 'company.change_cancel', 'company', $companyId, []);
+        });
     }
 
     public static function reviewChange(Actor $actor, string $changeId, bool $approve, string $reason = ''): void
@@ -264,6 +267,9 @@ final class CompanyProfile
             if ($doc['status'] !== 'pending') {
                 throw new DomainError('wrong_status', 'That document has already been checked.');
             }
+            if ($approve && $doc['expires_on'] !== null && $doc['expires_on'] <= Db::todayManila()->format('Y-m-d')) {
+                throw new DomainError('document_expired', 'This document has expired. Reject it and ask the customer for a current one.');
+            }
             if ($approve) {
                 Db::exec(Db::prepare('UPDATE ' . Db::t('company_documents') . ' SET status = %s WHERE company_id = UNHEX(%s) AND kind = %s AND status = %s',
                     'replaced', $doc['company_id'], $doc['kind'], 'approved'));
@@ -287,7 +293,12 @@ final class CompanyProfile
             . ' WHERE company_id = UNHEX(%s) ORDER BY uploaded_at DESC', $companyId));
         $today = Db::todayManila()->format('Y-m-d');
         foreach ($rows as &$r) {
-            $r['state'] = $r['status'] === 'approved' && $r['expires_on'] !== null && $r['expires_on'] <= $today ? 'expired' : $r['status'];
+            $r['state'] = match (true) {
+                $r['status'] !== 'approved' => $r['status'],
+                $r['expires_on'] === null => $r['kind'] === 'sec' ? 'approved' : 'no_expiry',
+                $r['expires_on'] <= $today => 'expired',
+                default => 'approved',
+            };
             $r['by_name'] = self::userName((int) $r['uploaded_by']);
         }
         return $rows;
@@ -310,8 +321,8 @@ final class CompanyProfile
     public static function pending(): array
     {
         return [
-            'documents' => (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('company_documents') . ' d JOIN ' . Db::t('companies') . ' c ON c.id = d.company_id WHERE d.status = %s AND c.status <> %s', 'pending', 'pending')),
-            'changes' => (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('company_changes') . ' WHERE status = %s', 'pending')),
+            'documents' => (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('company_documents') . ' d JOIN ' . Db::t('companies') . ' c ON c.id = d.company_id WHERE d.status = %s AND c.status IN (%s, %s)', 'pending', 'approved', 'suspended')),
+            'changes' => (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('company_changes') . ' x JOIN ' . Db::t('companies') . ' c ON c.id = x.company_id WHERE x.status = %s AND c.status IN (%s, %s)', 'pending', 'approved', 'suspended')),
         ];
     }
 
@@ -326,8 +337,8 @@ final class CompanyProfile
             "SELECT LOWER(HEX(c.id)) AS id, c.name,
                 (SELECT COUNT(*) FROM " . Db::t('company_documents') . " d WHERE d.company_id = c.id AND d.status = %s) AS documents,
                 (SELECT COUNT(*) FROM " . Db::t('company_changes') . " x WHERE x.company_id = c.id AND x.status = %s) AS changes
-             FROM {$c} c WHERE c.status <> %s HAVING documents > 0 OR changes > 0 ORDER BY c.name",
-            'pending', 'pending', 'pending'
+             FROM {$c} c WHERE c.status IN (%s, %s) HAVING documents > 0 OR changes > 0 ORDER BY c.name",
+            'pending', 'pending', 'approved', 'suspended'
         ));
         return array_map(static fn($r) => ['id' => (string) $r['id'], 'name' => (string) $r['name'], 'documents' => (int) $r['documents'], 'changes' => (int) $r['changes']], $rows);
     }

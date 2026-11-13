@@ -166,6 +166,8 @@ final class Companies
         }
         Db::transaction(static function () use ($actor, $companyId, $reason): void {
             self::setStatus($companyId, 'declined', $reason);
+            Db::exec(Db::prepare('UPDATE ' . Db::t('company_documents') . ' SET status = %s, status_reason = %s, reviewed_by = %d, reviewed_at = %s WHERE company_id = UNHEX(%s) AND status = %s',
+                'rejected', $reason, $actor->userId, Db::now(), $companyId, 'pending'));
             Db::exec(Db::prepare('UPDATE ' . Db::t('memberships') . ' SET status = %s, updated_at = %s WHERE company_id = UNHEX(%s)', 'inactive', Db::now(), $companyId));
             Audit::log($companyId, $actor->userId, 'company.decline', 'company', $companyId);
         });

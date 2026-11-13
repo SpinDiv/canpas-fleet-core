@@ -94,6 +94,7 @@ final class CompanyProfileScreen
                 'pending' => Ui::pill('pending', 'Waiting for Canpas'),
                 'rejected' => Ui::pill('suspended', 'Not accepted'),
                 'expired' => Ui::pill('suspended', 'Expired'),
+                'no_expiry' => Ui::pill('pending', 'No expiry date — upload the current one'),
                 default => Ui::pill('retired', 'Replaced'),
             };
             $acts = '<a class="btn" href="' . esc_url(add_query_arg('companydoc', $d['id'], Router::url('file'))) . '" target="_blank" rel="noopener">Open</a>';
