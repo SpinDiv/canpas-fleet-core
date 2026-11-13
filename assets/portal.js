@@ -226,6 +226,7 @@
     menuBtn.addEventListener('click', function () { setMenu(!document.documentElement.classList.contains('nav-open')); });
     document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') setMenu(false); });
     document.querySelectorAll('#side-nav a').forEach(function (a) { a.addEventListener('click', function () { setMenu(false); }); });
+    document.querySelectorAll('[data-menu-close]').forEach(function (el) { el.addEventListener('click', function () { setMenu(false); }); });
     window.addEventListener('resize', function () { if (window.innerWidth > 820) setMenu(false); });
   }
 

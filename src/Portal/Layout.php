@@ -62,6 +62,7 @@ final class Layout
     <a class="icon-btn" href="{$logout}" aria-label="Log out">{$out}</a>
     <button type="button" class="icon-btn" data-menu-toggle aria-controls="side-nav" aria-expanded="false" aria-label="Menu">{$burger}</button>
   </div>
+  <div class="nav-scrim" data-menu-close aria-hidden="true"></div>
   <nav class="side" id="side-nav" aria-label="Main menu">
     <div class="mwho"><span class="avatar" aria-hidden="true">{$initials}</span><span class="who-text"><b>{$name}</b><small>{$role}</small></span></div>
     <div class="brand"><img src="{$logo}" alt="Canpas" width="106" height="32"><span>{$sub}</span></div>
@@ -243,15 +244,20 @@ input.qty{width:96px;height:36px;padding:0 10px;border:1px solid var(--line-2);b
 .field small{font-size:12px}
 .form-actions button[disabled]{opacity:.5;cursor:not-allowed}
 .head-row{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:20px}.head-row h1{margin:0}
-.mbar,.mwho{display:none}
+.mbar,.mwho,.nav-scrim{display:none}
 @media (max-width:820px){
   .mbar{display:flex;flex:1 1 100%;position:sticky;top:0;z-index:60;height:56px;align-items:center;gap:4px;padding:0 4px 0 16px;background:var(--navy);color:#fff}
   .mbar-logo{display:flex;align-items:center}.mbar-logo img{height:24px;width:auto}
   .mbar .avatar{width:32px;height:32px;font-size:12px;margin-right:4px;color:var(--navy)}.mwho .avatar{color:var(--navy)}
   .icon-btn{width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:0;background:transparent;color:#fff;border-radius:8px;cursor:pointer}
   .icon-btn:hover,.icon-btn[aria-expanded=true]{background:rgba(255,255,255,.10)}
-  .side{display:none;position:fixed;top:56px;left:0;right:0;bottom:0;z-index:59;overflow-y:auto;padding:12px 12px 24px}
-  .nav-open .side{display:flex}.nav-open body{overflow:hidden}
+  .side{display:flex;position:fixed;top:56px;left:0;bottom:0;width:50%;z-index:59;overflow-y:auto;padding:12px 8px 24px;
+    transform:translateX(-100%);visibility:hidden;transition:transform .25s ease,visibility 0s linear .25s;box-shadow:4px 0 24px rgba(0,0,0,.25)}
+  .nav-open .side{transform:none;visibility:visible;transition:transform .25s ease,visibility 0s}
+  .nav-scrim{display:block;position:fixed;top:56px;left:0;right:0;bottom:0;z-index:58;background:rgba(10,15,28,.45);opacity:0;pointer-events:none;transition:opacity .25s ease}
+  .nav-open .nav-scrim{opacity:1;pointer-events:auto}.nav-open body{overflow:hidden}
+  .side .nav-item{height:auto;min-height:44px;padding:10px 12px;line-height:1.3}
+  .mwho .who-text{min-width:0}.mwho .who-text b{overflow-wrap:anywhere}
   .side .brand,.side .nav-item.logout{display:none}
   .mwho{display:flex;align-items:center;gap:10px;padding:8px 12px 16px;margin-bottom:8px;border-bottom:1px solid rgba(255,255,255,.08)}
   .mwho .who-text b{color:#fff}.mwho .who-text small{color:var(--navy-muted)}

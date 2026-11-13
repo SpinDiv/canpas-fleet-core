@@ -6,7 +6,7 @@
 
 ## 0.6.2 — 2026-11-13
 
-- Phone layout for every portal user: a fixed top bar with the Canpas logo on the left and the profile, log out and a menu (hamburger) button on the right. The menu opens the navigation full-screen and closes on a link, Escape or the button.
+- Phone layout for every portal user: a fixed top bar with the Canpas logo on the left and the profile, log out and a menu (hamburger) button on the right. The menu slides in from the left over half the screen and closes on a link, a tap outside it, Escape or the button.
 
 ## 0.6.1 — 2026-11-13
 
