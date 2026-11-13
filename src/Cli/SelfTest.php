@@ -992,6 +992,8 @@ final class SelfTest
             self::check('Opening the quotation PDF is logged', $views === 1, "{$views} views");
             self::expect('Another company cannot open the quotation PDF', 'not_found', static fn() => Quotes::pdf($userB, $q1, 2));
             self::expect('Only priced rounds have a quotation PDF', 'not_found', static fn() => Quotes::pdf($custA, $q1, 9));
+            $custMails = array_column(Mail::forOrder($q1, false), 'to_email');
+            self::check('Customers do not see emails sent to Canpas staff', $custMails !== [] && !in_array("notify.{$sfx}@canpas-demo.example", $custMails, true) && in_array("notify.{$sfx}@canpas-demo.example", array_column(Mail::forOrder($q1, true), 'to_email'), true));
             $rounds = Quotes::rounds($custA, $q1);
             $audits = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('audit_log') . ' WHERE object_id = UNHEX(%s) AND action LIKE %s', $q1, 'quote.%'));
             self::check('Every round is kept in the history and the audit log', count($rounds) === 5 && $audits >= 5, count($rounds) . ' rounds, ' . $audits . ' audits');
