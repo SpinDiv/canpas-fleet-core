@@ -168,7 +168,7 @@ final class FieldScreen
     {
         $back = Router::url('loadings');
         try {
-            $o = Orders::get($actor, $id);
+            $o = self::yardOrder($actor, $id);
         } catch (DomainError $e) {
             Layout::message('Order not found', $e->getMessage(), 404, ['label' => 'Back to loadings', 'href' => $back]);
             return;
@@ -233,7 +233,7 @@ final class FieldScreen
     {
         $back = Router::url('returns');
         try {
-            $o = Orders::get($actor, $id);
+            $o = self::yardOrder($actor, $id);
         } catch (DomainError $e) {
             Layout::message('Order not found', $e->getMessage(), 404, ['label' => 'Back to returns', 'href' => $back]);
             return;
@@ -272,6 +272,15 @@ final class FieldScreen
     }
 
     // ----- shared fields -----------------------------------------------------------------------
+
+    /** Order for a yard screen: yard staff open any order, without the office's order permissions. @return array<string,mixed> */
+    private static function yardOrder(Actor $actor, string $id): array
+    {
+        $actor->require('cf_count_stock');
+        $o = Orders::row($id);
+        $o['company_name'] = (string) Db::value(Db::prepare('SELECT name FROM ' . Db::t('companies') . ' WHERE id = UNHEX(%s)', $o['company_id']));
+        return $o;
+    }
 
     private static function odometerField(?int $min, mixed $suggest = null): string
     {
