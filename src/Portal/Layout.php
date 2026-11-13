@@ -53,17 +53,33 @@ final class Layout
         $burger = '<svg class="ic-open" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>'
             . '<svg class="ic-close" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
+        // Yard checkers and drivers get a phone tab bar instead of the slide-out menu.
+        $tabs = Nav::tabs($actor);
+        $shellClass = $tabs ? 'shell has-tabs' : 'shell';
+        $mbarEnd = $tabs ? '' : '<a class="icon-btn" href="' . $logout . '" aria-label="Log out">' . $out . '</a>'
+            . '<button type="button" class="icon-btn" data-menu-toggle aria-controls="side-nav" aria-expanded="false" aria-label="Menu">' . $burger . '</button>';
+        $scrim = $tabs ? '' : '<div class="nav-scrim" data-menu-close aria-hidden="true"></div>';
+        $tabbar = '';
+        if ($tabs) {
+            $tabbar = '<nav class="tabbar" aria-label="Main">';
+            foreach ($tabs as $t) {
+                $current = $t['slug'] === $active ? ' aria-current="page"' : '';
+                $tabbar .= '<a href="' . esc_url(Router::url($t['slug'])) . '"' . $current . '>' . Nav::icon($t['icon'], 22)
+                    . '<span>' . self::esc($t['label']) . '</span></a>';
+            }
+            $tabbar .= '</nav>';
+        }
+
         $chrome = <<<HTML
 <a class="skip" href="#main">Skip to main content</a>
-<div class="shell">
+<div class="{$shellClass}">
   <div class="mbar">
     <a class="mbar-logo" href="{$home}"><img src="{$logo}" alt="Canpas" width="80" height="24"></a>
     <span class="spacer"></span>
     <span class="avatar" title="{$name} · {$role}" aria-hidden="true">{$initials}</span>
-    <a class="icon-btn" href="{$logout}" aria-label="Log out">{$out}</a>
-    <button type="button" class="icon-btn" data-menu-toggle aria-controls="side-nav" aria-expanded="false" aria-label="Menu">{$burger}</button>
+    {$mbarEnd}
   </div>
-  <div class="nav-scrim" data-menu-close aria-hidden="true"></div>
+  {$scrim}
   <nav class="side" id="side-nav" aria-label="Main menu">
     <div class="mwho"><span class="avatar" aria-hidden="true">{$initials}</span><span class="who-text"><b>{$name}</b><small>{$role}</small></span></div>
     <div class="brand"><img src="{$logo}" alt="Canpas" width="106" height="32"><span>{$sub}</span></div>
@@ -81,6 +97,7 @@ final class Layout
       {$body}
     </main>
   </div>
+  {$tabbar}
 </div>
 HTML;
         self::bare($title, $chrome);
@@ -256,7 +273,7 @@ input.qty{width:96px;height:36px;padding:0 10px;border:1px solid var(--line-2);b
 .field small{font-size:12px}
 .form-actions button[disabled]{opacity:.5;cursor:not-allowed}
 .head-row{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:20px}.head-row h1{margin:0}
-.mbar,.mwho,.nav-scrim{display:none}
+.mbar,.mwho,.nav-scrim,.tabbar{display:none}
 @media (max-width:820px){
   .shell{align-content:flex-start}.body{min-height:calc(100vh - 56px);min-height:calc(100dvh - 56px)}
   .mbar{display:flex;flex:1 1 100%;position:sticky;top:0;z-index:60;height:56px;align-items:center;gap:4px;padding:0 4px 0 16px;background:var(--navy);color:#fff}
@@ -280,6 +297,14 @@ input.qty{width:96px;height:36px;padding:0 10px;border:1px solid var(--line-2);b
   .top{display:none}
   main{padding:16px}
   body{font-size:16px}
+  .has-tabs .mbar{padding-right:12px}
+  .tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:57;background:#fff;border-top:1px solid var(--line);box-shadow:0 -2px 12px rgba(20,29,48,.06);padding-bottom:env(safe-area-inset-bottom)}
+  .tabbar a{flex:1 1 0;min-width:0;min-height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;font-weight:500;color:var(--muted);text-decoration:none;-webkit-tap-highlight-color:transparent}
+  .tabbar a:hover{text-decoration:none;color:var(--ink)}
+  .tabbar a[aria-current=page]{color:var(--accent);font-weight:600}
+  .has-tabs main{padding-bottom:calc(88px + env(safe-area-inset-bottom))}
+  body:has(.has-tabs) .toast{bottom:calc(72px + env(safe-area-inset-bottom))}
+  .account-out{margin:16px 0 0}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 .req{list-style:none;margin:0;padding:0}.req>li{padding:16px 0;border-top:1px solid var(--line)}.req>li:first-child{border-top:0;padding-top:4px}

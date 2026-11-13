@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.4 — 2026-11-13
+
+- Yard checkers and drivers get an app-style tab bar fixed to the bottom of the screen on phones and tablets (Loadings · Returns · Account, or Today · Expenses · Account) instead of the slide-out menu. Other roles keep the menu.
+- New Account page for everyone: your name, role, email and company, a change-password form (at least 8 characters; you stay signed in) and Log out. Password changes are in the audit log.
+
 ## 0.6.3 — 2026-11-13
 
 - Phones and tablets: page content always starts right under the top bar (short pages such as the calendar were being pushed down).

@@ -179,6 +179,8 @@ final class Ui
             'date' => ' type="date"',
             'email' => ' type="email" autocomplete="email"',
             'plate' => ' type="text" class="mono" autocapitalize="characters"',
+            'password' => ' type="password" autocomplete="new-password"',
+            'password-current' => ' type="password" autocomplete="current-password"',
             default => ' type="text"',
         };
         if ($type === 'money' && $v !== '') {

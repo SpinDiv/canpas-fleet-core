@@ -99,6 +99,7 @@
     clearErrors(form);
     if (btn) { btn.disabled = true; btn.dataset.label = btn.textContent; btn.textContent = 'Saving…'; }
     api(form.dataset.endpoint, formBody(form)).then(function (data) {
+      if (data.nonce) cfg.nonce = data.nonce;
       done(form.dataset.after, data.message, form, data.redirect);
     }).catch(function (e) {
       showError(form, e);

@@ -73,6 +73,7 @@ final class Pages
         'my-statements' => [Screens\BillingScreen::class, 'myStatements'],
         'maintenance' => [Screens\ManageScreen::class, 'maintenance'],
         'reports' => [Screens\ManageScreen::class, 'reports'],
+        'account' => [Screens\AccountScreen::class, 'render'],
     ];
 
     public static function render(Actor $actor, string $slug): void
