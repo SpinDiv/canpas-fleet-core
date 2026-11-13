@@ -26,7 +26,9 @@ unchecked name or TIN on a quotation, bill or agreement.
 ## Non-goals
 - BIR 2303, IDs of the authorised person, secretary's certificates.
 - Blocking normal bookings on documents.
-- Re-issuing past bills or agreements with new company details.
+- Snapshots of company details on issued documents. **Ramon's choice:** quotation and bill PDFs always show the
+  company's current approved details, including after a name/TIN/address change (signed agreements are stored files
+  and keep what was signed).
 
 ## Anti-goals
 - An unchecked name/TIN/address appearing on any quotation, bill or agreement.
