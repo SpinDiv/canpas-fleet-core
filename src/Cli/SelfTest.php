@@ -984,6 +984,14 @@ final class SelfTest
             self::check('Accepting writes the special rates onto the order; total and deposit follow them',
                 $o1['status'] === 'requested' && (float) $r['rate_month'] === 127.5 && (float) $line['amount'] === $amt && (float) $o1['total'] === $amt && (float) $o1['deposit_amount'] === round($amt * 0.3, 2) && (float) ($r['normal_rates']['rate_month'] ?? 0) === 150.0,
                 $o1['status'] . ' ' . $o1['total'] . ' vs ' . $amt);
+            $qpdf = Quotes::pdf($custA, $q1, 2);
+            self::check('The quotation PDF has the letterhead, both rates and the validity',
+                str_starts_with($qpdf, '%PDF-1.4') && str_contains($qpdf, 'QUOTATION') && str_contains($qpdf, $o1['ref'] . ' / Q2') && str_contains($qpdf, 'Valid until') && str_contains($qpdf, '/Subtype /Image') && str_contains($qpdf, '127.50') && str_contains($qpdf, '150.00'),
+                strlen($qpdf) . ' bytes');
+            $views = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('file_views') . ' WHERE object_type = %s AND object_id = UNHEX(%s)', 'quote', $q1));
+            self::check('Opening the quotation PDF is logged', $views === 1, "{$views} views");
+            self::expect('Another company cannot open the quotation PDF', 'not_found', static fn() => Quotes::pdf($userB, $q1, 2));
+            self::expect('Only priced rounds have a quotation PDF', 'not_found', static fn() => Quotes::pdf($custA, $q1, 9));
             $rounds = Quotes::rounds($custA, $q1);
             $audits = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('audit_log') . ' WHERE object_id = UNHEX(%s) AND action LIKE %s', $q1, 'quote.%'));
             self::check('Every round is kept in the history and the audit log', count($rounds) === 5 && $audits >= 5, count($rounds) . ' rounds, ' . $audits . ' audits');
@@ -1011,6 +1019,13 @@ final class SelfTest
             Db::update('orders', ['quote_valid_until' => '2000-01-01 00:00:00'], ['id' => $q3], ['id']);
             Quotes::expire();
             self::check('A quotation past its validity expires and frees the stock', Orders::row($q3)['status'] === 'quote_expired' && $free(100, 5) === 100);
+            $expRound = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('quote_rounds') . ' WHERE order_id = UNHEX(%s) AND kind = %s', $q3, 'expired'));
+            $expAudit = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('audit_log') . ' WHERE object_id = UNHEX(%s) AND action = %s', $q3, 'quote.expired'));
+            $expMail = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('email_log') . ' WHERE order_id = UNHEX(%s) AND kind = %s', $q3, 'quote_expired'));
+            self::check('An expired quotation is recorded in its history and audit log, and the customer is emailed', $expRound === 1 && $expAudit === 1 && $expMail >= 1, "{$expRound}/{$expAudit}/{$expMail}");
+            $qStale = Quotes::request($qUser, 'equipment', $eq(0, 2, 5));
+            Quotes::expire();
+            self::check('A request never priced before its start date closes as expired', Orders::row($qStale)['status'] === 'quote_expired');
 
             // Accepted, but the hold ran out.
             $q2 = Quotes::request($qUser, 'equipment', $eq(60, 5, 30));
@@ -1023,6 +1038,7 @@ final class SelfTest
             $reMails = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('email_log') . ' WHERE order_id = UNHEX(%s) AND kind = %s', $q2, 'quote_reoffer'));
             self::check('An accepted quotation whose hold ends is offered again while the stock is free (both sides emailed)',
                 $o2['status'] === 'quoted' && $o2['quote_valid_until'] > Db::now() && $free(60, 5) === 70 && $reMails >= 2, $o2['status'] . ", {$reMails} emails");
+            self::expect('A quotation offered again after acceptance can be accepted or declined, not re-negotiated', 'wrong_status', static fn() => Quotes::counter($custA, $q2, 'Lower please'));
             Quotes::accept($custA, $q2);
             Db::update('orders', ['hold_expires_at' => '2000-01-01 00:00:00'], ['id' => $q2], ['id']);
             Orders::bookEquipment($userB, ['start_date' => $day(60), 'days' => 5, 'qty' => [$frames => 100], 'fulfilment' => 'pickup']);

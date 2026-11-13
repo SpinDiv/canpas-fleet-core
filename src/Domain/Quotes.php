@@ -337,6 +337,73 @@ final class Quotes
         return ($byDays < $cap ? $byDays : $cap)->format('Y-m-d H:i:s.u');
     }
 
+    // ----- Print-ready quotation ------------------------------------------------------------
+
+    /** The quotation for one priced round as a letterhead PDF. Opening it is logged. */
+    public static function pdf(Actor $actor, string $orderId, int $round): string
+    {
+        $o = Orders::row($orderId);
+        if (!$actor->can('cf_manage_orders')) {
+            Orders::assertCustomerAccess($actor, $o);
+        }
+        $r = Db::row(Db::prepare('SELECT round, kind, by_user, note, lines_json, normal_total, total, deposit, valid_until, created_at FROM ' . Db::t('quote_rounds')
+            . ' WHERE order_id = UNHEX(%s) AND round = %d AND kind IN (%s, %s) ORDER BY created_at DESC LIMIT 1', $o['id'], $round, 'offer', 'reoffer'));
+        if ($r === null) {
+            throw new DomainError('not_found', 'That quotation was not found.');
+        }
+        Documents::logView($actor, 'quote', $o['id'], 'Q' . $round);
+        $company = Db::row(Db::prepare('SELECT name, address, tin FROM ' . Db::t('companies') . ' WHERE id = UNHEX(%s)', $o['company_id'])) ?? [];
+        $num = static fn($v): string => number_format((float) $v, 2);
+        $sent = (new \DateTimeImmutable((string) $r['created_at'], new \DateTimeZone('UTC')))->setTimezone(new \DateTimeZone('Asia/Manila'));
+        $no = $o['ref'] . ' / Q' . $round;
+        $pdf = new \Canpas\Fleet\Support\Pdf('Quotation ' . $no, 'Canpas · Quotation ' . $no . ' · Prices valid until ' . ($r['valid_until'] ? self::manila((string) $r['valid_until']) : '—') . ', subject to availability.');
+        $pdf->letterhead('QUOTATION', $no, 'Date ' . $sent->format('j F Y'),
+            array_values(array_filter([(string) ($company['name'] ?? ''), (string) ($company['address'] ?? ''), !empty($company['tin']) ? 'TIN ' . $company['tin'] : ''])));
+        $where = $o['fulfilment'] === 'pickup' ? 'Pick-up and return at the Canpas yard' : (string) $o['site_address'];
+        $pdf->paragraph('Rental: ' . (new \DateTimeImmutable((string) $o['start_date']))->format('j M Y') . ' to ' . (new \DateTimeImmutable((string) $o['end_date']))->format('j M Y')
+            . ' (' . (int) $o['days'] . ' day' . ((int) $o['days'] === 1 ? '' : 's') . ')' . ($where !== '' ? ' · ' . $where : '')
+            . ($o['distance_km'] !== null ? ' · ' . number_format((float) $o['distance_km'], 1) . ' km round trip' : ''), 9.5, false, 2);
+        if ($r['valid_until']) {
+            $pdf->paragraph('Valid until ' . self::manila((string) $r['valid_until']) . ' (Philippine time)', 10, true, 6);
+        }
+        $pdf->rule();
+        $pdf->row([['Description', 0, 220, 'L'], ['Qty', 220, 35, 'R'], ['Normal rate', 260, 70, 'R'], ['Special rate', 335, 70, 'R'], ['Amount', 410, 73, 'R']], 9, true);
+        $pdf->rule();
+        foreach ((array) json_decode((string) $r['lines_json'], true) as $l) {
+            $qty = rtrim(rtrim(number_format((float) $l['qty'], 2), '0'), '.');
+            $pdf->row([[(string) $l['description'], 0, 220, 'L'], [$qty, 220, 35, 'R'], ['', 260, 70, 'R'], ['', 335, 70, 'R'], [$num($l['amount']), 410, 73, 'R']], 9.5, true);
+            foreach ((array) ($l['special'] ?? []) as $f => $v) {
+                $n = (float) ($l['normal'][$f] ?? 0);
+                if ($n <= 0 && (float) $v <= 0) {
+                    continue;
+                }
+                $pdf->row([['   ' . (self::FIELD_LABELS[$f] ?? $f), 0, 220, 'L'], ['', 220, 35, 'R'], [$num($n), 260, 70, 'R'], [$num($v), 335, 70, 'R'], ['', 410, 73, 'R']], 8.5);
+            }
+            if ((float) $l['normal_amount'] > (float) $l['amount']) {
+                $pdf->row([['   Normal amount ' . $num($l['normal_amount']), 0, 400, 'L']], 8);
+            }
+        }
+        $pdf->rule();
+        $sum = [['Normal price', $r['normal_total'], false], ['Special price', $r['total'], true]];
+        if ((float) $r['normal_total'] > (float) $r['total']) {
+            $sum[] = ['You save', (float) $r['normal_total'] - (float) $r['total'], false];
+        }
+        $sum[] = ['Deposit to hold the order', $r['deposit'], false];
+        foreach ($sum as [$label, $v, $bold]) {
+            $pdf->row([[$label, 260, 145, 'R'], ['PHP ' . $num($v), 410, 73, 'R']], $bold ? 10.5 : 9.5, $bold);
+        }
+        $pdf->space(10);
+        if ($r['note']) {
+            $pdf->paragraph('Note from Canpas', 9, true, 0);
+            $pdf->paragraph((string) $r['note'], 9.5, false, 8);
+        }
+        $pdf->paragraph('Terms', 9, true, 0);
+        $pdf->paragraph('These special rates apply to this rental only and are valid until the date above, subject to availability. Accept the quotation in the Canpas portal to hold the order; the ID, licence (where needed), deposit and signed rental agreement are then required before Canpas confirms it. Late returns, extra kilometres, damage and missing items are charged at the rates in this quotation.', 8.5, false, 10);
+        $by = $r['by_user'] ? self::userName((int) $r['by_user']) : 'Canpas';
+        $pdf->paragraph('Prepared by ' . $by . ' for ' . (string) Settings::get('company_legal_name'), 9, false, 0);
+        return $pdf->output();
+    }
+
     // ----- Pricing internals -------------------------------------------------------------------
 
     /** @return list<array<string, mixed>> order lines with hex ids */
