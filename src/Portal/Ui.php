@@ -12,6 +12,7 @@ final class Ui
 {
     public const LABELS = [
         'percent' => '% of order total', 'fixed' => 'Fixed amount (₱)',
+        'portal' => 'Canpas portal sign-in', 'website' => 'Website (theme pages)',
         'available' => 'Available', 'repair' => 'In repair', 'retired' => 'Retired',
         'formwork' => 'Formwork', 'scaffolding' => 'Scaffolding', 'tools' => 'Small tools & accessories', 'heavy' => 'Heavy equipment',
         'pc' => 'Piece', 'set' => 'Set', 'm2' => 'Square metre', 'm' => 'Metre', 'unit' => 'Unit',

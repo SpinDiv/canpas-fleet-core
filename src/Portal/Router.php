@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Canpas\Fleet\Portal;
 
+use Canpas\Fleet\Domain\Settings;
+
 use Canpas\Fleet\Roles\Roles;
 use Canpas\Fleet\Support\DomainError;
 use Canpas\Fleet\Tenancy\Actor;
@@ -41,6 +43,12 @@ final class Router
     {
         $page = sanitize_key((string) get_query_var('cf_page'));
         if ($page === '') {
+            // The site's home page opens the portal (sign-in for visitors) until a public website is wanted.
+            if ((is_front_page() || is_home()) && !is_paged() && Settings::get('home_page') === 'portal') {
+                nocache_headers();
+                wp_safe_redirect(is_user_logged_in() ? self::url() : self::url('login'), 302);
+                exit;
+            }
             return;
         }
         if (!defined('DONOTCACHEPAGE')) {

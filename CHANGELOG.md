@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 — 2026-11-13
+
+- The site's home page now opens the portal: visitors go to the Canpas sign-in, signed-in users to their dashboard. New setting "The site's home page opens" (Settings › Website) switches back to the theme's pages when a public website is wanted.
+
 ## 0.6.0 — 2026-11-13
 
 Milestone 5: closing orders and the money.

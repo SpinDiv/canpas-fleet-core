@@ -18,6 +18,7 @@ final class Settings
 
     /** key => [label, type, default, min, max] */
     public const FIELDS = [
+        'home_page' => ['The site\'s home page opens', 'enum:portal|website', 'portal', null, null],
         'yard_address' => ['Yard address', 'text', '', null, null],
         'yard_lat' => ['Yard latitude', 'float', '', -90, 90],
         'yard_lng' => ['Yard longitude', 'float', '', -180, 180],

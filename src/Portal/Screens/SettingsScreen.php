@@ -13,6 +13,7 @@ use Canpas\Fleet\Tenancy\Actor;
 final class SettingsScreen
 {
     private const GROUPS = [
+        'Website' => ['home_page'],
         'Yard' => ['yard_address', 'yard_lat', 'yard_lng'],
         'Bookings and billing' => ['hold_hours', 'km_tolerance_pct', 'driver_km_basis', 'trips_per_rental', 'delivery_truck_type'],
         'Payments' => ['payment_instructions', 'fuel_price_per_liter'],
