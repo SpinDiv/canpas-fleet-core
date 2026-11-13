@@ -122,6 +122,12 @@ final class SelfTest
             $hash = (string) get_userdata($driver->userId)->user_pass;
             $pwAudit = (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('audit_log') . ' WHERE actor_user_id = %d AND action = %s', $driver->userId, 'password_changed'));
             self::check('A valid password change works and is audited', wp_check_password('NewPass-123', $hash, $driver->userId) && $pwAudit === 1, "{$pwAudit} audit rows");
+            for ($i = 0; $i < 5; $i++) {
+                try { Account::changePassword($driver, 'guess-' . $i . '-xx', 'Another-123', 'Another-123'); } catch (DomainError $e) {}
+            }
+            self::expect('After 5 wrong current passwords, even the right one is refused for a while', 'rate_limited',
+                static fn() => Account::changePassword($driver, 'NewPass-123', 'Another-123', 'Another-123'));
+            delete_transient('cf_pwtry_' . $driver->userId);
 
             // Reference numbers.
             $prefix = 'T' . strtoupper(substr($sfx, 0, 3));
