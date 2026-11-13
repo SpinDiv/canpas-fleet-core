@@ -600,7 +600,7 @@ final class SelfTest
 
             // Return inspection of the truck.
             self::expect('A driver cannot do the return inspection', 'forbidden', static fn() => Yard::returnTruck($d1, $t1, ['odometer' => '1100'], $photo()));
-            self::expect('The return inspection needs photos', 'photos_required', static fn() => Yard::returnTruck($dispatcher, $t1, ['odometer' => '1100']));
+            self::expect('The return inspection needs photos', 'photos_required', static fn() => Yard::returnTruck($dispatcher, $t1, ['odometer' => '1100'], []));
             Yard::returnTruck($dispatcher, $t1, ['odometer' => '1100', 'fuel_short_liters' => '5'], $photo());
             $o = Orders::row($t1);
             self::check('The return records actual km and fuel shortfall for the final bill', $o['status'] === 'returned' && (int) $o['actual_km'] === 90 && (float) $o['fuel_short_liters'] === 5.0, $o['actual_km'] . ' km');
