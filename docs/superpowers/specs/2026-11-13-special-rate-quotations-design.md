@@ -81,6 +81,29 @@ clients flexibility openly: a quotation they can see, negotiate, print and accep
     "Prices are valid until … and subject to availability." Generated on the fly with the existing
     `Support\Pdf` writer (like the bill PDF); the browser's own print handles printing.
 
+## Branded communications (added by Ramon, 2026-11-13)
+Every change to a client's transaction must be backed by a proper, professional email, and the
+quotation must be print-ready. Applies to **all** client emails and to the quotation, final bill and
+signed agreement PDFs, not only quotations.
+
+- **Company details** are new Settings fields with placeholder values, editable later by the admin:
+  `company_legal_name` ("Canpas Philippines Inc."), `company_address` ("Company address, City, Province"),
+  `company_phone` ("+63 900 000 0000"), `company_email` ("office@canpas.example"),
+  `company_tin` ("000-000-000-000"), `records_bcc` (blank = off). Placeholders are obviously fake so
+  nobody mistakes them for real details.
+- **Email template** (`Support\Mail`, used by every existing and new email): navy (#141D30) header band
+  with the white logo; title line; optional summary box of label/value rows; paragraphs; one button;
+  footer with legal name, address, phone, email, TIN and "Replies go to the Canpas office". Reply-To =
+  `company_email`. Plain-text alternative kept. Subjects carry the order/quote reference.
+- **Email record:** new table `cf_email_log` (id, order_id NULL, company_id NULL, to_email, subject,
+  kind, sent_ok, created_at). Every `Mail::send` writes a row. The order page shows "Emails sent"
+  (when, to, subject) for staff and the customer. If `records_bcc` is set, every client email is BCC'd there.
+- **PDF letterhead** (`Support\Pdf` gains a letterhead helper): Canpas logo (embedded as JPEG on white)
+  top-left, company details top-right, document title (QUOTATION / FINAL BILL / RENTAL AGREEMENT),
+  number, date, client block, and page numbers "Page n of N". The bill and agreement PDFs adopt it.
+  The quotation PDF additionally shows: valid until, normal rate / special rate / amount per line,
+  total, saving, deposit, terms, "Prepared by <admin name>".
+
 ## Approaches considered
 1. **Quotation = an order at an earlier stage (picked).** New statuses before `requested`; special
    rates replace the copied `rates_json` on each line; existing pricing, availability, deposit and
