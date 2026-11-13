@@ -32,6 +32,7 @@ final class Nav
         'home' => 'M3 11l9-7 9 7M5 10v10h14V10',
         'returns' => 'M9 14l-4-4 4-4M5 10h10a4 4 0 0 1 0 8h-3',
         'logout' => 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11',
+        'user' => 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
         'search' => 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-5-5',
     ];
 
@@ -71,6 +72,8 @@ final class Nav
         'my-documents' => ['Documents', 'file', 'My account', 'cf_upload_documents', 'M3'],
         'my-statements' => ['Statements', 'receipt', 'My account', 'cf_view_statements', 'M5'],
         'company-users' => ['Company users', 'users', 'My account', 'cf_manage_company_users', 'M1'],
+        // Everyone
+        'account' => ['Account', 'user', 'Account', 'cf_access_portal', 'M1'],
     ];
 
     public const GROUPS = ['Operations', 'Fleet & stock', 'Customers', 'Finance', 'Yard', 'Trips', 'My account', 'Account'];
@@ -115,6 +118,27 @@ final class Nav
             }
         }
         return $out;
+    }
+
+    /**
+     * Phone bottom tabs: only for people whose pages fit in 2–4 tabs (today yard checkers and
+     * drivers). Everyone else keeps the slide-out menu, so this returns [] for them.
+     *
+     * @return list<array{slug:string,label:string,icon:string}>
+     */
+    public static function tabs(Actor $actor): array
+    {
+        $tabs = [];
+        foreach (self::PAGES as $slug => [$label, $icon, , $cap]) {
+            if ($slug !== 'account' && $actor->can($cap)) {
+                $tabs[] = ['slug' => $slug, 'label' => $label, 'icon' => $icon];
+            }
+        }
+        if (self::canOpen($actor, 'account')) {
+            $tabs[] = ['slug' => 'account', 'label' => self::PAGES['account'][0], 'icon' => self::PAGES['account'][1]];
+        }
+        $n = count($tabs);
+        return $n >= 2 && $n <= 4 ? $tabs : [];
     }
 
     public static function icon(string $name, int $size = 18): string

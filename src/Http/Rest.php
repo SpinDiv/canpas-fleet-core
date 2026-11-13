@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Canpas\Fleet\Http;
 
+use Canpas\Fleet\Domain\Account;
 use Canpas\Fleet\Domain\Agreements;
 use Canpas\Fleet\Domain\Billing;
 use Canpas\Fleet\Domain\Catalog;
@@ -271,6 +272,13 @@ final class Rest
         self::post('/settings', static function (Actor $a, \WP_REST_Request $r): array {
             Settings::save($a, self::body($r));
             return ['message' => 'Settings saved.'];
+        });
+
+        // Your own account.
+        self::post('/account/password', static function (Actor $a, \WP_REST_Request $r): array {
+            $b = self::body($r);
+            Account::changePassword($a, (string) ($b['current'] ?? ''), (string) ($b['new'] ?? ''), (string) ($b['confirm'] ?? ''));
+            return ['message' => 'Password changed.', 'nonce' => wp_create_nonce('wp_rest')];
         });
     }
 
