@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0 — 2026-11-13
+
+Milestone 4: running the fleet.
+
+- Assigning: the dispatcher gives each confirmed truck order a truck of the booked type and, if requested, a company driver; heavy equipment gets its units by serial; delivered equipment gets a delivery and a pickup run (truck and driver). No truck, unit or driver can be on two overlapping jobs, checked under row locks; drivers need a licence valid to the end of the job.
+- Driver phone screens: My trips (today and the next 7 days), each with Google Maps and Waze buttons and step buttons — Leaving yard, Arrived on site, Delivered, Picked up, Back at yard. Odometer at leaving and return, photos at each key step, receiver's name and signature at delivery. The order status follows the trip, and the truck's odometer is updated.
+- Fuel and expenses: amount, litres, truck, order and a receipt photo. Drivers see their own; the office sees all and per order.
+- Yard phone screens: Loadings (count equipment out against the booking; customer pickups sign on the phone; self-drive trucks are released with odometer, photos and the customer driver's signature) and Returns (truck odometer, fuel shortfall, damage and photos, optionally sent to repair; equipment counted back as good / damaged / missing, with damaged and missing taken out of stock and damaged units sent to repair). The return records actual km for the final bill.
+- Office: Dispatch board (to assign, going out, coming back, overdue), 14-day calendar of every truck and heavy unit, Drivers page (licence and expiry, add a driver login), Operations card on every order with the assignments and a timeline of every step with photos and signatures. Customers see their order's timeline, photos and delivery signature.
+- All photos, signatures and receipts are private files, opened only through the portal and logged.
+- Dispatchers can now release and check in at the yard (cf_count_stock). `wp canpas migrate` also refreshes role capabilities.
+- Migration `0005_operations`. Self-test adds checks for assignment rules, step order, odometer, signatures, loading and return counts, stock and file access.
+
 ## 0.4.0 — 2026-11-13
 
 Milestone 3: requirements.

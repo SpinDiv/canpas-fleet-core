@@ -210,7 +210,7 @@ TXT;
         if (empty($in['agree']) || $in['agree'] === '0') {
             throw new DomainError('not_agreed', 'Tick the box to confirm you have read and agree to the agreement.', ['field' => 'agree']);
         }
-        [$jpeg, $w, $h] = self::signatureJpeg((string) ($in['signature'] ?? ''));
+        [$jpeg, $w, $h] = \Canpas\Fleet\Support\Signature::jpeg((string) ($in['signature'] ?? ''));
 
         $version = self::active();
         $signedAt = Db::now();
@@ -267,54 +267,6 @@ TXT;
     }
 
     // ----- internals ---------------------------------------------------------------------------
-
-    /** @return array{0:string,1:int,2:int} JPEG bytes on white, width, height */
-    private static function signatureJpeg(string $dataUrl): array
-    {
-        if (!preg_match('#^data:image/png;base64,([A-Za-z0-9+/=]+)$#', $dataUrl, $m)) {
-            throw new DomainError('signature_missing', 'Draw your signature in the box.', ['field' => 'signature']);
-        }
-        $png = base64_decode($m[1], true);
-        if ($png === false || strlen($png) > 400000 || !function_exists('imagecreatefromstring')) {
-            throw new DomainError('signature_missing', 'Draw your signature in the box.', ['field' => 'signature']);
-        }
-        $src = @imagecreatefromstring($png);
-        if ($src === false) {
-            throw new DomainError('signature_missing', 'Draw your signature in the box.', ['field' => 'signature']);
-        }
-        $w = imagesx($src);
-        $h = imagesy($src);
-        if ($w < 50 || $h < 20 || $w > 2400 || $h > 1200) {
-            imagedestroy($src);
-            throw new DomainError('signature_missing', 'Draw your signature in the box.', ['field' => 'signature']);
-        }
-        // Count ink: opaque, dark pixels on a coarse grid. A blank or near-blank box is refused.
-        $ink = 0;
-        for ($y = 0; $y < $h; $y += 2) {
-            for ($x = 0; $x < $w; $x += 2) {
-                $c = imagecolorat($src, $x, $y);
-                $a = ($c >> 24) & 0x7F;
-                $lum = (($c >> 16) & 0xFF) * 0.3 + (($c >> 8) & 0xFF) * 0.59 + ($c & 0xFF) * 0.11;
-                if ($a < 90 && $lum < 160) {
-                    $ink++;
-                }
-            }
-        }
-        if ($ink < 40) {
-            imagedestroy($src);
-            throw new DomainError('signature_missing', 'Draw your signature in the box.', ['field' => 'signature']);
-        }
-        $out = imagecreatetruecolor($w, $h);
-        imagefill($out, 0, 0, imagecolorallocate($out, 255, 255, 255));
-        imagealphablending($out, true);
-        imagecopy($out, $src, 0, 0, 0, 0, $w, $h);
-        ob_start();
-        imagejpeg($out, null, 88);
-        $jpeg = (string) ob_get_clean();
-        imagedestroy($src);
-        imagedestroy($out);
-        return [$jpeg, $w, $h];
-    }
 
     private static function pdf(array $o, array $version, string $name, string $signedAt, ?string $ipHash, string $jpeg, int $w, int $h): string
     {

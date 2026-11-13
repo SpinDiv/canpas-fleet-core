@@ -7,10 +7,15 @@ namespace Canpas\Fleet\Http;
 use Canpas\Fleet\Domain\Agreements;
 use Canpas\Fleet\Domain\Catalog;
 use Canpas\Fleet\Domain\Companies;
+use Canpas\Fleet\Domain\Dispatch;
 use Canpas\Fleet\Domain\Documents;
+use Canpas\Fleet\Domain\Drivers;
+use Canpas\Fleet\Domain\Expenses;
 use Canpas\Fleet\Domain\Orders;
 use Canpas\Fleet\Domain\Payments;
 use Canpas\Fleet\Domain\Requirements;
+use Canpas\Fleet\Domain\Trips;
+use Canpas\Fleet\Domain\Yard;
 use Canpas\Fleet\Domain\Settings;
 use Canpas\Fleet\Domain\Stock;
 use Canpas\Fleet\Portal\Nav;
@@ -181,6 +186,54 @@ final class Rest
             return ['message' => "Saved as version {$v}. New signatures use it; signed orders keep theirs."];
         });
 
+        // Operations: assigning the fleet, trips, yard and expenses.
+        self::post('/orders/' . self::ID . '/assign-truck', static function (Actor $a, \WP_REST_Request $r): array {
+            Dispatch::assignTruck($a, (string) $r['id'], strtolower((string) $r->get_param('truck_id')), (int) $r->get_param('driver_user_id'));
+            return ['message' => 'Truck assigned.'];
+        });
+        self::post('/orders/' . self::ID . '/assign-units', static function (Actor $a, \WP_REST_Request $r): array {
+            $in = self::body($r);
+            Dispatch::assignUnits($a, (string) $r['id'], strtolower((string) ($in['line_id'] ?? '')), array_values((array) ($in['units'] ?? [])));
+            return ['message' => 'Units assigned.'];
+        });
+        self::post('/orders/' . self::ID . '/assign-run', static function (Actor $a, \WP_REST_Request $r): array {
+            Dispatch::assignRun($a, (string) $r['id'], (string) $r->get_param('kind'), strtolower((string) $r->get_param('truck_id')), (int) $r->get_param('driver_user_id'));
+            return ['message' => ucfirst((string) $r->get_param('kind')) . ' run assigned.'];
+        });
+        self::post('/trips/' . self::ID . '/step', static function (Actor $a, \WP_REST_Request $r): array {
+            $in = self::body($r);
+            Trips::step($a, (string) $r['id'], (string) ($in['step'] ?? ''), $in, $r->get_file_params());
+            return ['message' => Trips::LABELS[(string) $in['step']] . ' recorded.'];
+        });
+        self::post('/orders/' . self::ID . '/load', static function (Actor $a, \WP_REST_Request $r): array {
+            Yard::load($a, (string) $r['id'], self::body($r), $r->get_file_params());
+            return ['message' => 'Loading recorded.', 'redirect' => Router::url('loadings')];
+        });
+        self::post('/orders/' . self::ID . '/release', static function (Actor $a, \WP_REST_Request $r): array {
+            Yard::releaseTruck($a, (string) $r['id'], self::body($r), $r->get_file_params());
+            return ['message' => 'Truck released.', 'redirect' => Router::url('loadings')];
+        });
+        self::post('/orders/' . self::ID . '/return', static function (Actor $a, \WP_REST_Request $r): array {
+            $o = Orders::row((string) $r['id']);
+            $o['kind'] === 'truck'
+                ? Yard::returnTruck($a, $o['id'], self::body($r), $r->get_file_params())
+                : Yard::returnEquipment($a, $o['id'], self::body($r), $r->get_file_params());
+            return ['message' => 'Return recorded.', 'redirect' => Router::url('returns')];
+        });
+        self::post('/expenses', static function (Actor $a, \WP_REST_Request $r): array {
+            $files = $r->get_file_params();
+            Expenses::add($a, self::body($r), $files['receipt'] ?? null);
+            return ['message' => 'Expense saved.'];
+        });
+        self::post('/drivers', static function (Actor $a, \WP_REST_Request $r): array {
+            Drivers::create($a, self::body($r));
+            return ['message' => 'Driver added. They get an email to set their password.'];
+        });
+        self::post('/drivers/(?P<uid>\d+)', static function (Actor $a, \WP_REST_Request $r): array {
+            Drivers::save($a, (int) $r['uid'], self::body($r));
+            return ['message' => 'Driver saved.'];
+        });
+
         // Settings.
         self::post('/settings', static function (Actor $a, \WP_REST_Request $r): array {
             Settings::save($a, self::body($r));
@@ -202,10 +255,52 @@ final class Rest
     private static function body(\WP_REST_Request $r): array
     {
         $p = $r->get_json_params() ?: $r->get_body_params();
+        $p = is_array($p) ? self::unflatten($p) : [];
         // Never let the browser set money fields; the domain recalculates them anyway.
         unset($p['total'], $p['subtotal'], $p['deposit'], $p['deposit_amount']);
         unset($p['id'], $p['_wpnonce']);
         return is_array($p) ? $p : [];
+    }
+
+    /**
+     * JSON bodies from the portal keep form names like "qty[abc]" or "units[]" as flat keys.
+     * Turn them into nested arrays, as PHP does for multipart forms.
+     *
+     * @param array<string,mixed> $in
+     * @return array<string,mixed>
+     */
+    private static function unflatten(array $in): array
+    {
+        $out = [];
+        foreach ($in as $k => $v) {
+            if (!is_string($k) || !preg_match('/^([^\[]+)((?:\[[^\]]*\])+)$/', $k, $m)) {
+                $out[$k] = $v;
+                continue;
+            }
+            preg_match_all('/\[([^\]]*)\]/', $m[2], $parts);
+            $path = array_merge([$m[1]], $parts[1]);
+            foreach (is_array($v) && end($path) === '' ? $v : [$v] as $val) {
+                $ref = &$out;
+                foreach ($path as $i => $seg) {
+                    $last = $i === count($path) - 1;
+                    if ($seg === '') {
+                        $ref[] = $last ? $val : [];
+                        end($ref);
+                        $seg = key($ref);
+                    } elseif ($last) {
+                        $ref[$seg] = $val;
+                    }
+                    if (!$last) {
+                        if (!isset($ref[$seg]) || !is_array($ref[$seg])) {
+                            $ref[$seg] = [];
+                        }
+                        $ref = &$ref[$seg];
+                    }
+                }
+                unset($ref);
+            }
+        }
+        return $out;
     }
 
     /** Run $fn with the current actor; turn business-rule refusals into clean JSON errors. */

@@ -59,6 +59,44 @@ final class Files
         return ['path' => $rel, 'name' => substr($name, 0, 190)];
     }
 
+    /**
+     * Store several uploads from one multi-file field (e.g. photos[]).
+     *
+     * @param array<string,mixed>|null $field the $_FILES entry, single or multiple
+     * @return list<string> relative paths
+     */
+    public static function storeMany(?array $field, string $folder, int $max = 8): array
+    {
+        $list = [];
+        if ($field !== null && isset($field['tmp_name'])) {
+            if (is_array($field['tmp_name'])) {
+                foreach (array_keys($field['tmp_name']) as $i) {
+                    if (($field['error'][$i] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+                        continue;
+                    }
+                    $list[] = ['name' => $field['name'][$i] ?? '', 'tmp_name' => $field['tmp_name'][$i], 'size' => $field['size'][$i] ?? 0, 'error' => $field['error'][$i] ?? UPLOAD_ERR_OK];
+                }
+            } elseif (($field['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                $list[] = $field;
+            }
+        }
+        if (count($list) > $max) {
+            throw new DomainError('too_many_files', "Attach at most {$max} photos.", ['field' => 'photos']);
+        }
+        $paths = [];
+        try {
+            foreach ($list as $f) {
+                $paths[] = self::storeUpload($f, $folder)['path'];
+            }
+        } catch (DomainError $e) {
+            foreach ($paths as $p) {
+                self::delete($p);
+            }
+            throw new DomainError($e->reason, $e->getMessage(), ['field' => 'photos']);
+        }
+        return $paths;
+    }
+
     /** Send a stored file to the browser and stop. */
     public static function stream(string $relative, string $downloadName): void
     {

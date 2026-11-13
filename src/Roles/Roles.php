@@ -36,7 +36,7 @@ final class Roles
 
     private const DISPATCH = [
         'cf_access_portal', 'cf_view_dashboard', 'cf_manage_orders', 'cf_view_documents', 'cf_confirm_payments',
-        'cf_assign_fleet', 'cf_dispatch', 'cf_manage_companies', 'cf_view_reports',
+        'cf_assign_fleet', 'cf_dispatch', 'cf_manage_companies', 'cf_view_reports', 'cf_count_stock',
     ];
 
     /** @var array<string, list<string>> */
@@ -44,7 +44,7 @@ final class Roles
         self::ADMIN => [
             ...self::DISPATCH,
             'cf_approve_companies', 'cf_manage_fleet', 'cf_manage_stock', 'cf_manage_rates', 'cf_manage_settings',
-            'cf_override_price', 'cf_settle_deposits', 'cf_view_audit', 'cf_manage_staff', 'cf_count_stock',
+            'cf_override_price', 'cf_settle_deposits', 'cf_view_audit', 'cf_manage_staff',
         ],
         self::DISPATCHER => self::DISPATCH,
         self::YARD => ['cf_access_portal', 'cf_count_stock'],

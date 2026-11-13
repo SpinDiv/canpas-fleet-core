@@ -43,6 +43,15 @@ final class Dashboard
                 $alerts[] = ['warn', 'Order ready for checking: ' . $o['ref'], $o['company_name'] . ' · starts ' . Ui::date($o['start_date']), add_query_arg('id', $o['id'], Router::url('orders'))];
             }
         }
+        if ($actor->can('cf_dispatch')) {
+            $board = \Canpas\Fleet\Domain\Dispatch::board($actor);
+            foreach ($board['overdue'] as $o) {
+                $alerts[] = ['bad', 'Overdue return: ' . $o['ref'], $o['company_name'] . ' · was due ' . Ui::date($o['end_date']), add_query_arg('id', $o['id'], Router::url('orders'))];
+            }
+            if ($board['assign'] !== []) {
+                $alerts[] = ['warn', count($board['assign']) . ' confirmed order' . (count($board['assign']) === 1 ? '' : 's') . ' to assign', 'Trucks, units or drivers still missing', Router::url('dispatch')];
+            }
+        }
         $docs = \Canpas\Fleet\Domain\Documents::counts()['pending'];
         if ($docs > 0 && $actor->can('cf_view_documents')) {
             $alerts[] = ['', $docs . ' document' . ($docs === 1 ? '' : 's') . ' to check', 'IDs and licences uploaded by customers', Router::url('documents')];
@@ -84,7 +93,7 @@ final class Dashboard
             . Ui::card('Needs attention', $alertHtml)
             . Ui::card('Fleet status', Ui::table(['Plate', 'Type', 'Status'], $fleetRows, 'No trucks added yet.'), '<a href="' . esc_url(Router::url('trucks')) . '" class="small">View all</a>')
             . '</div>'
-            . '<p class="muted small" style="margin-top:16px">Deliveries, returns, utilisation and revenue join this dashboard as operations (milestone 4) and billing (milestone 5) go live.</p>';
+            . '<p class="muted small" style="margin-top:16px">Utilisation, revenue and fuel reports join this dashboard with billing (milestone 5).</p>';
 
         $first = explode(' ', trim(wp_get_current_user()->display_name))[0] ?? '';
         $actions = $actor->can('cf_manage_fleet') ? '<a class="btn" href="' . esc_url(Router::url('trucks')) . '">Trucks</a>' : '';

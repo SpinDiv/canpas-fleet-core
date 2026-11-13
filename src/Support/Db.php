@@ -124,6 +124,36 @@ final class Db
         self::exec(self::prepare($sql, ...$args));
     }
 
+    /**
+     * UPDATE table SET ... WHERE ... (all where conditions joined with AND).
+     *
+     * @param array<string,mixed> $data
+     * @param array<string,mixed> $where
+     * @param list<string> $binary hex columns (in data or where) written with UNHEX()
+     */
+    public static function update(string $table, array $data, array $where, array $binary = []): int
+    {
+        $set = [];
+        $args = [];
+        foreach ($data as $col => $value) {
+            if ($value === null) {
+                $set[] = "`{$col}` = NULL";
+                continue;
+            }
+            $set[] = "`{$col}` = " . (in_array($col, $binary, true) ? 'UNHEX(%s)' : '%s');
+            $args[] = is_bool($value) ? (int) $value : (string) $value;
+        }
+        $cond = [];
+        foreach ($where as $col => $value) {
+            $cond[] = "`{$col}` = " . (in_array($col, $binary, true) ? 'UNHEX(%s)' : '%s');
+            $args[] = (string) $value;
+        }
+        if ($set === [] || $cond === []) {
+            throw new \LogicException('update() needs data and a where clause');
+        }
+        return self::exec(self::prepare('UPDATE ' . self::t($table) . ' SET ' . implode(', ', $set) . ' WHERE ' . implode(' AND ', $cond), ...$args));
+    }
+
     public static function begin(): void
     {
         self::exec('START TRANSACTION');

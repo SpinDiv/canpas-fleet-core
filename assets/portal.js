@@ -42,7 +42,9 @@
     var hasFile = Array.prototype.some.call(form.querySelectorAll('input[type=file]'), function (f) { return f.files.length; });
     if (hasFile) return fd;
     var body = {};
-    fd.forEach(function (v, k) { body[k] = v; });
+    fd.forEach(function (v, k) {
+      if (k.slice(-2) === '[]') { (body[k] = body[k] || []).push(v); } else { body[k] = v; }
+    });
     return body;
   }
 

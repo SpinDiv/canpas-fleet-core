@@ -23,7 +23,9 @@ final class Command
         foreach (Runner::migrate() as $line) {
             WP_CLI::log($line);
         }
-        WP_CLI::success('Migrations complete.');
+        // Keep role capabilities in step with the code.
+        \Canpas\Fleet\Roles\Roles::install();
+        WP_CLI::success('Migrations complete. Roles updated.');
     }
 
     /**

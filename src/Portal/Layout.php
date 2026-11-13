@@ -266,6 +266,39 @@ details.upload .form{padding:16px;border:1px solid var(--line);border-radius:8px
 textarea.mono-area{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.55;height:auto;padding:10px 12px}
 .field textarea{height:auto;padding:8px 10px}
 @media (max-width:720px){.field input[type=file],.inline-form select{font-size:16px}.req-head{align-items:flex-start;flex-direction:column;gap:6px}}
+.ops-block+.ops-block{margin-top:12px}.card h3.sub{font-size:13px;font-weight:600;margin:8px 0 8px;color:var(--ink-2)}
+.unit-list{display:flex;flex-wrap:wrap;gap:8px}.unit-pick{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;padding:0 10px;height:38px;font-size:13px;cursor:pointer}
+.unit-pick input{width:16px;height:16px;margin:0}
+.timeline{list-style:none;margin:0;padding:0 0 0 16px;border-left:2px solid var(--line)}.timeline li{position:relative;padding:0 0 14px 12px}
+.timeline li::before{content:"";position:absolute;left:-23px;top:4px;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid #fff}
+.tl-head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}.tl-head b{font-size:13px}
+.thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.thumbs img{width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid var(--line);display:block}
+.cal-wrap{overflow-x:auto}.cal{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%}
+.cal th,.cal td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:4px;text-align:center;vertical-align:top;min-width:58px;height:34px}
+.cal thead th{font-weight:500;color:var(--ink-2);background:#F8FAFC;position:sticky;top:0}.cal thead th b{font-size:14px;color:var(--ink)}
+.cal .cal-name{text-align:left;min-width:150px;position:sticky;left:0;background:#fff;z-index:1}.cal thead .cal-name{background:#F8FAFC}
+.cal .cal-name small{display:block;color:var(--muted);font-weight:400;font-size:11px}
+.cal td.today,.cal th.today{background:#FFF7ED}.cal th.sun{color:var(--bad)}
+.cal-group td{text-align:left;font-weight:600;background:#F1F5F9;color:var(--ink-2);height:auto;padding:6px 8px}
+.chip{display:block;border-radius:4px;padding:2px 4px;margin-bottom:2px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;font-variant-numeric:tabular-nums}
+.chip.rental{background:#DBEAFE;color:#1E3A8A}.chip.delivery,.chip.pickup{background:#FEF3C7;color:#92400E}
+.cal-legend .chip{display:inline-block;margin:0 4px 0 12px}.cal-legend .chip:first-child{margin-left:0}
+.trip-list{display:flex;flex-direction:column;gap:12px;max-width:640px}
+.trip-card{display:block;background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;color:inherit;text-decoration:none;line-height:1.5}
+.trip-card:hover{border-color:var(--accent)}.trip-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.trip-ref{font-size:13px;color:var(--ink-2)}.trip-next{margin-top:8px;color:var(--accent);font-weight:600}
+.steps{list-style:none;display:flex;gap:4px;padding:0;margin:0 0 16px;flex-wrap:wrap}
+.steps li{flex:1 1 0;min-width:90px;font-size:12px;text-align:center;padding:8px 4px;border-radius:6px;background:#F1F5F9;color:var(--muted)}
+.steps li.done{background:#DCFCE7;color:#166534}.steps li.now{background:var(--accent);color:#fff;font-weight:600}
+.phone-form{max-width:560px;display:flex;flex-direction:column;gap:14px}.phone-form .field{margin:0}
+.btn.big{height:48px;padding:0 20px;font-size:15px}.btn.wide{width:100%;justify-content:center}
+.map-btns{display:flex;gap:8px;margin-top:12px}.map-btns .btn{flex:1;justify-content:center}
+.count-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.count-row input,.count-row select{width:120px;flex:none}.count-row select{width:190px}
+.count-set{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0}.count-set legend{font-size:13px;padding:0 4px}
+.count-3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+@media (max-width:820px){.phone-form input,.phone-form select,.phone-form textarea,.inline-form select,.unit-pick{font-size:16px;min-height:44px}.btn{min-height:44px}
+  .steps li{min-width:0;font-size:11px;padding:8px 2px}.count-row select{width:160px}}
 CSS;
     }
 }

@@ -8,13 +8,18 @@ use Canpas\Fleet\Audit\Audit;
 use Canpas\Fleet\Domain\Agreements;
 use Canpas\Fleet\Domain\Catalog;
 use Canpas\Fleet\Domain\Companies;
+use Canpas\Fleet\Domain\Dispatch;
 use Canpas\Fleet\Domain\Distance;
 use Canpas\Fleet\Domain\Documents;
+use Canpas\Fleet\Domain\Drivers;
+use Canpas\Fleet\Domain\Expenses;
 use Canpas\Fleet\Domain\Orders;
 use Canpas\Fleet\Domain\Payments;
 use Canpas\Fleet\Domain\Pricing;
 use Canpas\Fleet\Domain\Requirements;
 use Canpas\Fleet\Domain\Settings;
+use Canpas\Fleet\Domain\Trips;
+use Canpas\Fleet\Domain\Yard;
 use Canpas\Fleet\Domain\Stock;
 use Canpas\Fleet\Portal\Nav;
 use Canpas\Fleet\Roles\Roles;
@@ -115,6 +120,7 @@ final class SelfTest
             self::milestone1($sfx, $admin, $dispatcher, $mk, $users, $companies);
             self::milestone2($sfx, $admin, $dispatcher, $custA, $userB, $suspended);
             self::milestone3($sfx, $admin, $dispatcher, $custA, $userB);
+            self::milestone4($sfx, $admin, $dispatcher, $custA, $userB, $mk, $users);
         } catch (\Throwable $e) {
             self::check('Self-test ran to completion', false, get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
         } finally {
@@ -480,6 +486,194 @@ final class SelfTest
         }
     }
 
+    /** Milestone 4: assigning the fleet, driver steps, yard loading and returns, expenses. */
+    private static function milestone4(string $sfx, Actor $admin, Actor $dispatcher, Actor $custA, Actor $userB, callable $mk, array &$users): void
+    {
+        $savedSettings = get_option(Settings::OPTION, null);
+        Orders::$refPrefix = 'TST';
+        add_filter('pre_wp_mail', '__return_true');
+        $png = wp_tempnam('cftest4.png');
+        file_put_contents($png, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));
+        $photo = static fn(): array => ['photos' => ['name' => ['p.png'], 'tmp_name' => [$png], 'size' => [filesize($png)], 'error' => [UPLOAD_ERR_OK]]];
+        $day = static fn(int $n): string => Db::todayManila()->modify("+{$n} days")->format('Y-m-d');
+        $sig = self::signaturePng(true);
+        $confirm = static fn(string $id) => Db::update('orders', ['status' => 'confirmed', 'confirmed_at' => Db::now()], ['id' => $id], ['id']);
+        try {
+            $applied = Db::value(Db::prepare('SELECT status FROM ' . Db::t('migrations') . ' WHERE version = %s', '0005_operations'));
+            self::check('Migration 0005_operations is applied', $applied === 'applied', (string) $applied);
+            self::check('Dispatchers can release and check in at the yard; drivers cannot', $dispatcher->can('cf_count_stock') && !$dispatcher->can('cf_drive'));
+
+            // Catalog.
+            $rates = ['starting_fee' => 3000, 'rate_per_km' => 50, 'driver_flat_fee' => 1500, 'driver_flat_km' => 10, 'driver_rate_per_km' => 30, 'daily_rate' => 0, 'free_km' => 0, 'deposit_mode' => 'percent', 'deposit_value' => 30, 'active' => 1];
+            $big = Catalog::saveTruckType($admin, ['name' => "Selftest M4 10-wheeler {$sfx}"] + $rates);
+            $small = Catalog::saveTruckType($admin, ['name' => "Selftest M4 6-wheeler {$sfx}"] + $rates);
+            $td1 = Catalog::saveTruck($admin, ['type_id' => $big, 'plate' => "TD1{$sfx}", 'odometer_km' => 1000, 'status' => 'available']);
+            $td2 = Catalog::saveTruck($admin, ['type_id' => $big, 'plate' => "TD2{$sfx}", 'odometer_km' => 1200, 'status' => 'available']);
+            $tr = Catalog::saveTruck($admin, ['type_id' => $big, 'plate' => "TR{$sfx}", 'odometer_km' => 0, 'status' => 'repair']);
+            $ts = Catalog::saveTruck($admin, ['type_id' => $small, 'plate' => "TS{$sfx}", 'odometer_km' => 500, 'status' => 'available']);
+            $item = ['unit' => 'pc', 'rate_day' => 8, 'rate_week' => 45, 'rate_month' => 150, 'min_days' => 1, 'deposit_mode' => 'percent', 'deposit_value' => 30, 'replacement_cost' => 2500, 'damage_fee' => 600, 'active' => 1];
+            $frames = Catalog::saveItem($admin, ['name' => "Selftest M4 frames {$sfx}", 'category' => 'scaffolding'] + $item);
+            $exc = Catalog::saveItem($admin, ['name' => "Selftest M4 excavator {$sfx}", 'category' => 'heavy', 'unit' => 'unit', 'rate_day' => 3500, 'rate_week' => 21000, 'rate_month' => 75000] + $item);
+            $u1 = Catalog::saveUnit($admin, ['item_id' => $exc, 'serial' => "XA{$sfx}", 'status' => 'available']);
+            $u2 = Catalog::saveUnit($admin, ['item_id' => $exc, 'serial' => "XB{$sfx}", 'status' => 'available']);
+            Stock::adjust($admin, $frames, 50, 'opening');
+            Settings::save($admin, ['yard_lat' => '14.329400', 'yard_lng' => '120.936700', 'hold_hours' => 24, 'driver_km_basis' => 'round_trip', 'notify_email' => '', 'delivery_truck_type' => $small]);
+
+            // Drivers.
+            $d1 = $mk('drv1', Roles::DRIVER, null);
+            $d2 = $mk('drv2', Roles::DRIVER, null);
+            $d3 = $mk('drv3', Roles::DRIVER, null);
+            $lic = static fn(string $exp): array => ['phone' => '0917 000 0000', 'license_number' => 'N01-23-' . random_int(100000, 999999), 'license_expiry' => $exp, 'active' => '1'];
+            self::expect('A dispatcher cannot edit driver records', 'forbidden', static fn() => Drivers::save($dispatcher, $d1->userId, $lic($day(800))));
+            Drivers::save($admin, $d1->userId, $lic($day(800)));
+            Drivers::save($admin, $d2->userId, $lic($day(5)));
+            Drivers::save($admin, $d3->userId, $lic($day(800)));
+            $newDriver = Drivers::create($admin, ['name' => "Selftest New Driver {$sfx}", 'email' => "cftest.newdrv.{$sfx}@canpas-demo.example"] + $lic($day(400)));
+            $users[] = $newDriver;
+            self::check('The admin can add a driver login with licence details', Drivers::get($newDriver)['license_expiry'] === $day(400));
+
+            // Orders (requirements are tested in milestone 3; here they are confirmed directly).
+            $site = ['site_address' => 'Imus, Cavite', 'site_coords' => '14.4296, 120.9367'];
+            $t1 = Orders::bookTruck($custA, ['truck_type_id' => $big, 'start_date' => $day(20), 'days' => 3, 'needs_driver' => '1'] + $site);
+            $t2 = Orders::bookTruck($custA, ['truck_type_id' => $big, 'start_date' => $day(21), 'days' => 2, 'needs_driver' => '0'] + $site);
+            $e1 = Orders::bookEquipment($custA, ['start_date' => $day(20), 'days' => 5, 'fulfilment' => 'delivery', 'qty' => [$frames => 20, $exc => 1]] + $site);
+            $e2 = Orders::bookEquipment($custA, ['start_date' => $day(30), 'days' => 3, 'fulfilment' => 'pickup', 'qty' => [$frames => 10]]);
+            $e3 = Orders::bookEquipment($userB, ['start_date' => $day(22), 'days' => 2, 'fulfilment' => 'pickup', 'qty' => [$exc => 1]]);
+            self::expect('Nothing is assigned before the order is confirmed', 'wrong_status', static fn() => Dispatch::assignTruck($dispatcher, $t1, $td1, $d1->userId));
+            foreach ([$t1, $t2, $e1, $e2, $e3] as $id) {
+                $confirm($id);
+            }
+            self::check('A confirmed order lists what is still to assign', Dispatch::gaps(Orders::row($t1)) === ['truck', 'driver'] && Dispatch::gaps(Orders::row($e1)) === ['units', 'delivery run', 'pickup run'],
+                implode(',', Dispatch::gaps(Orders::row($e1))));
+
+            // Assigning trucks and drivers.
+            self::expect('A customer cannot assign trucks', 'forbidden', static fn() => Dispatch::assignTruck($custA, $t1, $td1, $d1->userId));
+            self::expect('A truck order with a Canpas driver needs a driver', 'driver_required', static fn() => Dispatch::assignTruck($dispatcher, $t1, $td1));
+            self::expect('Only a truck of the booked type can be assigned', 'wrong_type', static fn() => Dispatch::assignTruck($dispatcher, $t1, $ts, $d1->userId));
+            self::expect('A truck in repair cannot be assigned', 'truck_unavailable', static fn() => Dispatch::assignTruck($dispatcher, $t1, $tr, $d1->userId));
+            self::expect('A driver whose licence expires before the rental ends cannot be assigned', 'license_expires', static fn() => Dispatch::assignTruck($dispatcher, $t1, $td1, $d2->userId));
+            Dispatch::assignTruck($dispatcher, $t1, $td1, $d1->userId);
+            self::expect('The same truck cannot go on two orders with overlapping dates', 'double_booked', static fn() => Dispatch::assignTruck($dispatcher, $t2, $td1));
+            Dispatch::assignTruck($dispatcher, $t2, $td2);
+            self::check('A self-drive truck needs only the truck', Dispatch::gaps(Orders::row($t2)) === [] && Dispatch::gaps(Orders::row($t1)) === []);
+            self::expect('A truck out on a rental cannot do a delivery run on those dates', 'double_booked', static fn() => Dispatch::assignRun($dispatcher, $e1, 'delivery', $td1, $d3->userId));
+            self::expect('A driver on a rental cannot take a delivery run on those dates', 'double_booked', static fn() => Dispatch::assignRun($dispatcher, $e1, 'delivery', $ts, $d1->userId));
+            Dispatch::assignRun($dispatcher, $e1, 'delivery', $ts, $d3->userId);
+            Dispatch::assignRun($dispatcher, $e1, 'pickup', $ts, $d3->userId);
+
+            // Heavy units.
+            $lines = Yard::lines(Orders::row($e1));
+            $excLine = array_values(array_filter($lines, static fn($l) => $l['tracking'] === 'serial'))[0];
+            $frameLine = array_values(array_filter($lines, static fn($l) => $l['tracking'] === 'qty'))[0];
+            self::expect('The number of units must match the booking', 'wrong_count', static fn() => Dispatch::assignUnits($dispatcher, $e1, $excLine['id'], [$u1, $u2]));
+            Dispatch::assignUnits($dispatcher, $e1, $excLine['id'], [$u1]);
+            $e3line = Yard::lines(Orders::row($e3))[0];
+            self::expect('The same unit cannot go on two orders with overlapping dates', 'double_booked', static fn() => Dispatch::assignUnits($dispatcher, $e3, $e3line['id'], [$u1]));
+            Dispatch::assignUnits($dispatcher, $e3, $e3line['id'], [$u2]);
+            self::check('With units and runs assigned, nothing is left to assign', Dispatch::gaps(Orders::row($e1)) === []);
+            $cal = Dispatch::calendar($dispatcher, $day(20), 7);
+            $row = array_values(array_filter($cal, static fn($r) => $r['label'] === strtoupper("TD1{$sfx}")))[0] ?? ['days' => []];
+            self::check('The calendar shows the truck busy on its order\'s dates', ($row['days'][$day(21)][0]['ref'] ?? '') === Orders::row($t1)['ref']);
+
+            // Driver steps on the truck rental.
+            $trip = Dispatch::assignments($t1)['trips']['rental'];
+            $step = static fn(Actor $a, string $s, array $in = [], array $f = []) => Trips::step($a, $trip['id'], $s, $in, $f);
+            self::expect('Another driver cannot update this trip', 'not_found', static fn() => $step($d2, 'left_yard', ['odometer' => '1010'], $photo()));
+            self::expect('A customer cannot update a trip', 'not_found', static fn() => $step($custA, 'left_yard', ['odometer' => '1010'], $photo()));
+            self::expect('Steps go in order (cannot deliver before leaving the yard)', 'wrong_step', static fn() => $step($d1, 'delivered'));
+            self::expect('Leaving the yard needs the odometer', 'invalid_input', static fn() => $step($d1, 'left_yard', [], $photo()));
+            self::expect('The odometer cannot go below the truck\'s last reading', 'odometer_low', static fn() => $step($d1, 'left_yard', ['odometer' => '900'], $photo()));
+            self::expect('Leaving the yard needs a photo', 'photos_required', static fn() => $step($d1, 'left_yard', ['odometer' => '1010']));
+            $step($d1, 'left_yard', ['odometer' => '1010'], $photo());
+            self::check('Leaving the yard puts the order on the way and updates the odometer',
+                Orders::row($t1)['status'] === 'dispatched' && (int) Orders::row($t1)['odo_out'] === 1010 && (int) Db::value(Db::prepare('SELECT odometer_km FROM ' . Db::t('trucks') . ' WHERE id = UNHEX(%s)', $td1)) === 1010);
+            $step($d1, 'on_site');
+            self::expect('Delivery needs the receiver\'s signature', 'signature_missing', static fn() => $step($d1, 'delivered', ['receiver_name' => 'Site Foreman', 'signature' => self::signaturePng(false)], $photo()));
+            $step($d1, 'delivered', ['receiver_name' => 'Site Foreman', 'signature' => $sig], $photo());
+            $tr1 = Dispatch::assignments($t1)['trips']['rental'];
+            self::check('Delivery records the receiver and puts the order on site', Orders::row($t1)['status'] === 'on_site' && $tr1['receiver_name'] === 'Site Foreman' && $tr1['receiver_signature'] !== null);
+            $step($d1, 'picked_up', [], $photo());
+            self::expect('Back at the yard cannot show fewer km than when leaving', 'odometer_low', static fn() => $step($d1, 'back', ['odometer' => '1005']));
+            $step($d1, 'back', ['odometer' => '1100']);
+            self::check('Picking up and coming back moves the order to being returned', Orders::row($t1)['status'] === 'returning');
+            self::expect('A finished trip takes no more steps', 'trip_done', static fn() => $step($d1, 'back', ['odometer' => '1200']));
+
+            // Return inspection of the truck.
+            self::expect('A driver cannot do the return inspection', 'forbidden', static fn() => Yard::returnTruck($d1, $t1, ['odometer' => '1100'], $photo()));
+            self::expect('The return inspection needs photos', 'photos_required', static fn() => Yard::returnTruck($dispatcher, $t1, ['odometer' => '1100']));
+            Yard::returnTruck($dispatcher, $t1, ['odometer' => '1100', 'fuel_short_liters' => '5'], $photo());
+            $o = Orders::row($t1);
+            self::check('The return records actual km and fuel shortfall for the final bill', $o['status'] === 'returned' && (int) $o['actual_km'] === 90 && (float) $o['fuel_short_liters'] === 5.0, $o['actual_km'] . ' km');
+
+            // Self-drive release and return.
+            self::expect('A self-drive release needs the customer driver\'s signature', 'signature_missing', static fn() => Yard::releaseTruck($dispatcher, $t2, ['odometer' => '1200', 'receiver_name' => 'Juan Driver', 'signature' => ''], $photo()));
+            Yard::releaseTruck($dispatcher, $t2, ['odometer' => '1200', 'receiver_name' => 'Juan Driver', 'signature' => $sig], $photo());
+            self::check('Releasing a self-drive truck puts it with the customer', Orders::row($t2)['status'] === 'on_site' && Orders::row($t2)['handover_name'] === 'Juan Driver');
+            Yard::returnTruck($dispatcher, $t2, ['odometer' => '1350', 'damage_note' => 'Dent on the rear left panel', 'to_repair' => '1'], $photo());
+            self::check('A damaged truck can be sent to repair at return', Db::value(Db::prepare('SELECT status FROM ' . Db::t('trucks') . ' WHERE id = UNHEX(%s)', $td2)) === 'repair' && (int) Orders::row($t2)['actual_km'] === 150);
+
+            // Equipment by delivery.
+            $del = Dispatch::assignments($e1)['trips']['delivery'];
+            $pick = Dispatch::assignments($e1)['trips']['pickup'];
+            self::expect('The delivery driver cannot leave before the yard has loaded', 'not_loaded', static fn() => Trips::step($d3, $del['id'], 'left_yard', ['odometer' => '510'], $photo()));
+            self::expect('A driver cannot load at the yard', 'forbidden', static fn() => Yard::load($d3, $e1, [], []));
+            self::expect('Loading must match the booked quantity', 'count_mismatch', static fn() => Yard::load($dispatcher, $e1, ['qty' => [$frameLine['id'] => '19']], []));
+            Yard::load($dispatcher, $e1, ['qty' => [$frameLine['id'] => '20']], $photo());
+            self::expect('An order cannot be loaded twice', 'wrong_status', static fn() => Yard::load($dispatcher, $e1, ['qty' => [$frameLine['id'] => '20']], []));
+            self::expect('The pickup run cannot start before delivery', 'wrong_status', static fn() => Trips::step($d3, $pick['id'], 'left_yard', ['odometer' => '520'], $photo()));
+            Trips::step($d3, $del['id'], 'left_yard', ['odometer' => '510'], $photo());
+            Trips::step($d3, $del['id'], 'on_site', [], []);
+            Trips::step($d3, $del['id'], 'delivered', ['receiver_name' => 'Site Engineer', 'signature' => $sig], $photo());
+            Trips::step($d3, $del['id'], 'back', ['odometer' => '540'], []);
+            self::check('The delivery run takes the equipment on site', Orders::row($e1)['status'] === 'on_site');
+            self::expect('Equipment cannot be counted back before the pickup run is back', 'trip_not_back', static fn() => Yard::returnEquipment($dispatcher, $e1, [], []));
+            Trips::step($d3, $pick['id'], 'left_yard', ['odometer' => '600'], $photo());
+            Trips::step($d3, $pick['id'], 'on_site', [], []);
+            Trips::step($d3, $pick['id'], 'picked_up', [], $photo());
+            Trips::step($d3, $pick['id'], 'back', ['odometer' => '630'], []);
+            $before = Stock::onHand($frames);
+            self::expect('Returned counts must add up to what went out', 'count_mismatch', static fn() => Yard::returnEquipment($dispatcher, $e1,
+                ['good' => [$frameLine['id'] => '18'], 'damaged' => [$frameLine['id'] => '1'], 'unit' => [$u1 => 'ok']], []));
+            Yard::returnEquipment($dispatcher, $e1, ['good' => [$frameLine['id'] => '17'], 'damaged' => [$frameLine['id'] => '2'], 'missing' => [$frameLine['id'] => '1'], 'unit' => [$u1 => 'repair']], $photo());
+            self::check('Damaged and missing pieces leave the stock and a damaged unit goes to repair',
+                Stock::onHand($frames) === $before - 3 && Db::value(Db::prepare('SELECT status FROM ' . Db::t('equipment_units') . ' WHERE id = UNHEX(%s)', $u1)) === 'repair' && Orders::row($e1)['status'] === 'returned',
+                Stock::onHand($frames) . ' on hand');
+
+            // Equipment picked up by the customer.
+            $e2line = Yard::lines(Orders::row($e2))[0];
+            self::expect('Customer pickup needs the collector\'s name', 'invalid_input', static fn() => Yard::load($dispatcher, $e2, ['qty' => [$e2line['id'] => '10']], []));
+            Yard::load($dispatcher, $e2, ['qty' => [$e2line['id'] => '10'], 'receiver_name' => 'Pedro Collector', 'signature' => $sig], []);
+            self::check('Loading a customer pickup hands it over', Orders::row($e2)['status'] === 'on_site' && Orders::row($e2)['handover_name'] === 'Pedro Collector');
+            Yard::returnEquipment($dispatcher, $e2, ['good' => [$e2line['id'] => '10']], []);
+            self::check('A full return leaves the stock unchanged', Stock::onHand($frames) === $before - 3 && Orders::row($e2)['status'] === 'returned');
+
+            // Private photos and signatures.
+            $ev = Trips::timeline($e1);
+            $withPhoto = array_values(array_filter($ev, static fn($e) => $e['photo_list'] !== []))[0];
+            self::expect('Another company cannot open delivery photos', 'not_found', static fn() => Trips::photo($userB, $withPhoto['id'], 0));
+            self::expect('A driver who was not on the order cannot open its photos', 'not_found', static fn() => Trips::photo($d1, $withPhoto['id'], 0));
+            Trips::photo($custA, $withPhoto['id'], 0);
+            Trips::signature($custA, $del['id']);
+            self::check('The customer sees their own delivery photos and signature; each view is logged',
+                (int) Db::value(Db::prepare('SELECT COUNT(*) FROM ' . Db::t('file_views') . ' WHERE user_id = %d AND object_type IN (%s, %s)', $custA->userId, 'photo', 'signature')) === 2);
+            self::check('Every step is in the order timeline', count(Trips::timeline($t1)) === 6, (string) count(Trips::timeline($t1)));
+
+            // Expenses.
+            self::expect('Fuel needs the truck', 'invalid_input', static fn() => Expenses::add($d1, ['kind' => 'fuel', 'amount' => '2500'], ['name' => 'r.png', 'tmp_name' => $png, 'size' => filesize($png), 'error' => 0]));
+            self::expect('An expense needs a receipt photo', 'file_missing', static fn() => Expenses::add($d1, ['kind' => 'fuel', 'amount' => '2500', 'truck_id' => $td1], null));
+            self::expect('A driver cannot log an expense on someone else\'s order', 'not_found', static fn() => Expenses::add($d2, ['kind' => 'toll', 'amount' => '120', 'order_id' => $t1], ['name' => 'r.png', 'tmp_name' => $png, 'size' => filesize($png), 'error' => 0]));
+            $exp = Expenses::add($d1, ['kind' => 'fuel', 'amount' => '2,500.50', 'liters' => '40', 'odometer' => '1100', 'truck_id' => $td1, 'order_id' => $t1], ['name' => 'r.png', 'tmp_name' => $png, 'size' => filesize($png), 'error' => 0]);
+            self::expect('A driver cannot open another driver\'s receipt', 'not_found', static fn() => Expenses::receipt($d2, $exp));
+            self::check('Drivers see their own expenses; the office sees all',
+                count(Expenses::list($d1)) === 1 && Expenses::list($d2) === [] && count(Expenses::list($dispatcher, $t1)) === 1 && (float) Expenses::list($d1)[0]['amount'] === 2500.5);
+        } finally {
+            @unlink($png);
+            remove_filter('pre_wp_mail', '__return_true');
+            Orders::$refPrefix = 'ORD';
+            $savedSettings === null ? delete_option(Settings::OPTION) : update_option(Settings::OPTION, $savedSettings, false);
+        }
+    }
+
     /** A 300×100 PNG data URL, with a scribble or blank. */
     private static function signaturePng(bool $ink): string
     {
@@ -530,6 +724,11 @@ final class SelfTest
     {
         $private = trailingslashit(CANPAS_FLEET_PRIVATE_DIR);
         foreach ($users as $uid) {
+            foreach (Db::rows(Db::prepare('SELECT receipt_file FROM ' . Db::t('expenses') . ' WHERE user_id = %d', $uid)) as $r) {
+                Files::delete($r['receipt_file']);
+            }
+            Db::exec(Db::prepare('DELETE FROM ' . Db::t('expenses') . ' WHERE user_id = %d', $uid));
+            Db::exec(Db::prepare('DELETE FROM ' . Db::t('driver_profiles') . ' WHERE user_id = %d', $uid));
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('audit_log') . ' WHERE actor_user_id = %d', $uid));
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('memberships') . ' WHERE user_id = %d', $uid));
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('file_views') . ' WHERE user_id = %d', $uid));
@@ -541,6 +740,24 @@ final class SelfTest
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('payments') . ' WHERE company_id = UNHEX(%s)', $c));
             foreach (Db::rows(Db::prepare('SELECT agreement_file FROM ' . Db::t('orders') . ' WHERE company_id = UNHEX(%s) AND agreement_file IS NOT NULL', $c)) as $r) {
                 Files::delete($r['agreement_file']);
+            }
+            $orderOf = ' x JOIN ' . Db::t('orders') . ' o ON o.id = x.order_id WHERE o.company_id = UNHEX(%s)';
+            foreach (Db::rows(Db::prepare('SELECT x.photos FROM ' . Db::t('trip_events') . $orderOf, $c)) as $r) {
+                foreach ($r['photos'] ? (array) json_decode((string) $r['photos'], true) : [] as $f) {
+                    Files::delete((string) $f);
+                }
+            }
+            foreach (Db::rows(Db::prepare('SELECT x.receiver_signature FROM ' . Db::t('trips') . $orderOf, $c)) as $r) {
+                Files::delete($r['receiver_signature']);
+            }
+            foreach (Db::rows(Db::prepare('SELECT handover_signature FROM ' . Db::t('orders') . ' WHERE company_id = UNHEX(%s)', $c)) as $r) {
+                Files::delete($r['handover_signature']);
+            }
+            foreach (['trip_events', 'trips', 'order_assets', 'order_counts', 'expenses'] as $tbl) {
+                Db::exec(Db::prepare('DELETE x FROM ' . Db::t($tbl) . $orderOf, $c));
+            }
+            foreach (['trips', 'yard'] as $dir) {
+                @rmdir($private . $dir . '/' . $c);
             }
             Db::exec(Db::prepare('DELETE l FROM ' . Db::t('order_lines') . ' l JOIN ' . Db::t('orders') . ' o ON o.id = l.order_id WHERE o.company_id = UNHEX(%s)', $c));
             Db::exec(Db::prepare('DELETE FROM ' . Db::t('orders') . ' WHERE company_id = UNHEX(%s)', $c));

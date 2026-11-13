@@ -74,4 +74,20 @@ final class Stock
             Audit::log(null, $actor->userId, 'stock.adjust', 'equipment_item', $itemId, ['qty' => $qty, 'reason' => $reason]);
         });
     }
+
+    /**
+     * Ledger entry made by the system during a return (damaged or missing stock). Runs inside the
+     * caller's transaction; the caller has already checked permission.
+     */
+    public static function record(Actor $actor, string $itemId, int $qty, string $reason, string $note): void
+    {
+        if (!isset(self::REASONS[$reason]) || $qty === 0) {
+            throw new \LogicException('Bad stock movement');
+        }
+        Db::insert('stock_movements', [
+            'id' => Uuid::v7(), 'item_id' => $itemId, 'qty' => $qty, 'reason' => $reason,
+            'note' => mb_substr($note, 0, 255), 'user_id' => $actor->userId, 'created_at' => Db::now(),
+        ], ['id', 'item_id']);
+        Audit::log(null, $actor->userId, 'stock.' . $reason, 'equipment_item', $itemId, ['qty' => $qty, 'note' => $note]);
+    }
 }

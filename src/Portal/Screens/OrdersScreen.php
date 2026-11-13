@@ -195,6 +195,7 @@ final class OrdersScreen
         }
         $showReq = !in_array($o['status'], ['cancelled', 'expired'], true) || !empty($o['gov_id_doc']) || !empty($o['signed_at']);
         $body = '<div class="split">' . Ui::card('Order', $dl) . Ui::card('Price', self::breakdown($draft)) . '</div>'
+            . OpsScreen::card($actor, $o)
             . ($showReq ? RequirementsScreen::card($actor, $o) : '');
         Layout::page($actor, $page, $o['ref'], $body, $page === 'orders' ? 'Operations / Orders' : 'My account / My orders', $actions);
     }

@@ -62,6 +62,13 @@ final class Pages
         'documents' => [Screens\RequirementsScreen::class, 'documents'],
         'payments' => [Screens\RequirementsScreen::class, 'payments'],
         'agreement' => [Screens\RequirementsScreen::class, 'agreement'],
+        'dispatch' => [Screens\OpsScreen::class, 'dispatch'],
+        'calendar' => [Screens\OpsScreen::class, 'calendar'],
+        'drivers' => [Screens\OpsScreen::class, 'drivers'],
+        'today' => [Screens\FieldScreen::class, 'today'],
+        'expenses' => [Screens\FieldScreen::class, 'expenses'],
+        'loadings' => [Screens\FieldScreen::class, 'loadings'],
+        'returns' => [Screens\FieldScreen::class, 'returns'],
     ];
 
     public static function render(Actor $actor, string $slug): void
@@ -90,6 +97,9 @@ final class Pages
                 $param('doc') !== '' => \Canpas\Fleet\Domain\Documents::file($actor, $param('doc'), $param('side')),
                 $param('payment') !== '' => \Canpas\Fleet\Domain\Payments::proof($actor, $param('payment')),
                 $param('agreement') !== '' => \Canpas\Fleet\Domain\Agreements::file($actor, $param('agreement')),
+                $param('photo') !== '' => \Canpas\Fleet\Domain\Trips::photo($actor, $param('photo'), (int) ($_GET['n'] ?? 0)),
+                $param('sig') !== '' => \Canpas\Fleet\Domain\Trips::signature($actor, $param('sig')),
+                $param('expense') !== '' => \Canpas\Fleet\Domain\Expenses::receipt($actor, $param('expense')),
                 default => \Canpas\Fleet\Domain\Companies::permitFile($actor, $param('company')),
             };
         } catch (\Canpas\Fleet\Support\DomainError $e) {
